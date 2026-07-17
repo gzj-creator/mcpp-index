@@ -13,23 +13,36 @@ package = {
     xpm = {
         linux = {
             ["1.38.1"] = {
-                url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz",
+                url = {
+                    GLOBAL = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/asio/releases/download/1.38.1/asio-1.38.1.tar.gz",
+                },
                 sha256 = "2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc",
             },
         },
         macosx = {
             ["1.38.1"] = {
-                url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz",
+                url = {
+                    GLOBAL = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/asio/releases/download/1.38.1/asio-1.38.1.tar.gz",
+                },
                 sha256 = "2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc",
             },
         },
         windows = {
             ["1.38.1"] = {
-                -- The tag tarball contains two POSIX symlinks. xlings cannot
-                -- materialize them on the Windows runner, so use GitHub's ZIP
-                -- encoding of the same tagged commit on this platform.
-                url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.zip",
-                sha256 = "c4557a5a07ff8aa9c37bd141b7d1a6ba2b1bad5557d97762ad27aaf0091c665b",
+                -- Upstream's tag archives (tar.gz AND zip) both carry two POSIX
+                -- symlinks (asio/include -> ../include, asio/src -> ../src) that
+                -- tar.exe cannot materialize on the Windows runner, and upstream
+                -- publishes no symlink-free asset for 1.38.x. This asset is the
+                -- upstream tag tarball with only those two symlink entries
+                -- removed (tar --delete); all 1544 regular files are
+                -- byte-identical to upstream. Provenance: xlings-res/asio README.
+                url = {
+                    GLOBAL = "https://github.com/xlings-res/asio/releases/download/1.38.1/asio-1.38.1-nosymlinks.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/asio/releases/download/1.38.1/asio-1.38.1-nosymlinks.tar.gz",
+                },
+                sha256 = "77f74094bb12cd867a6edbf5736bbed816c6ce0906e880de8573097a81714d89",
             },
         },
     },

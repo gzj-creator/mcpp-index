@@ -32,21 +32,28 @@ consumer contract and requires its own compatibility evidence.
 - License: Boost Software License 1.0 (`BSL-1.0`), confirmed from upstream
   `COPYING` and `LICENSE_1_0.txt` at the tag.
 - Linux/macOS archive: tag tarball, SHA-256
-  `2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc`.
-- Windows archive: the same tag's ZIP encoding, SHA-256
-  `c4557a5a07ff8aa9c37bd141b7d1a6ba2b1bad5557d97762ad27aaf0091c665b`.
+  `2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc`,
+  CN-mirrored byte-identically at
+  `https://gitcode.com/mcpp-res/asio/releases/download/1.38.1/asio-1.38.1.tar.gz`.
+- Windows archive: `asio-1.38.1-nosymlinks.tar.gz`, SHA-256
+  `77f74094bb12cd867a6edbf5736bbed816c6ce0906e880de8573097a81714d89`, hosted at
+  `https://github.com/xlings-res/asio/releases/download/1.38.1/` (GLOBAL) and
+  `https://gitcode.com/mcpp-res/asio/releases/download/1.38.1/` (CN).
 
-Two independent downloads of each archive encoding produced the same
-platform-specific SHA-256. Both archives are wrapped in
-`asio-asio-1-38-1/`, and their public entry header is
-`asio-asio-1-38-1/include/asio.hpp`. Therefore `*/include` is the required
+Two independent downloads of the upstream tarball produced the same SHA-256.
+All archives are wrapped in `asio-asio-1-38-1/`, and their public entry header
+is `asio-asio-1-38-1/include/asio.hpp`. Therefore `*/include` is the required
 consumer include root.
 
-The tag tarball also contains `asio/include -> ../include` and
-`asio/src -> ../src` POSIX symlinks. The Windows xlings extraction path exited
-with code 127 immediately after downloading that tarball. The Windows entry
-therefore uses GitHub's ZIP encoding of the same tagged commit, following the
-repository's existing platform-specific archive pattern.
+Both upstream tag archive encodings (tar.gz and zip) contain
+`asio/include -> ../include` and `asio/src -> ../src` POSIX symlink entries.
+The Windows extraction path (`tar.exe` via xlings) cannot materialize them, so
+both encodings fail on the Windows runner, and upstream publishes no
+symlink-free asset for 1.38.x (GitHub has no release assets; SourceForge stops
+at 1.36.0). The Windows entry therefore uses a repackaged variant of the
+upstream tag tarball with only those two symlink entries removed
+(`tar --delete` + `gzip -n -9`); all 1544 regular files are byte-identical to
+upstream. Provenance is documented in the `xlings-res/asio` repository README.
 
 The upstream tag is annotated but not cryptographically signed. Reproducibility
 is enforced by the descriptor's pinned archive digest.
@@ -60,8 +67,8 @@ so the package uses an inline Form B descriptor at
 - namespace: `compat`;
 - full package name: `compat.asio`;
 - published version: bare version `1.38.1`;
-- platforms: Linux and macOS use the tag tarball; Windows uses the tag ZIP to
-  avoid the tarball's POSIX symlink extraction failure;
+- platforms: Linux and macOS use the tag tarball; Windows uses the repackaged
+  symlink-free tarball to avoid the POSIX symlink extraction failure;
 - include root: `*/include`;
 - build target: a generated C anchor provides the buildable library target
   required by the current package resolver;
@@ -90,13 +97,16 @@ workflow pin (`MCPP_VERSION = "0.0.94"`).
 
 ## 4. URL and mirror decision
 
-No authorized, byte-identical `mcpp-res` CN asset is available for this
-contribution. The descriptor therefore uses the plain canonical upstream URL,
-which is the current repository's supported fallback. It does not fabricate a
-CN entry or alias the upstream URL as a CN mirror.
+Linux/macOS keep the canonical upstream GitHub tarball as GLOBAL; a
+byte-identical copy of that tarball is uploaded to
+`gitcode.com/mcpp-res/asio` as the CN mirror (same SHA-256, verified after
+upload).
 
-A maintainer may add a legitimate CN mirror later by uploading the exact same
-bytes for each platform archive and retaining its pinned SHA-256.
+Windows cannot use either upstream tag archive encoding (both carry the POSIX
+symlinks), so its GLOBAL asset is the repackaged symlink-free tarball hosted
+in the ecosystem's resource org `github.com/xlings-res/asio`, with a
+byte-identical CN copy on `gitcode.com/mcpp-res/asio`. Both hosts were
+sha256-verified after upload against the descriptor's pinned digest.
 
 ## 5. Consumer and test design
 
