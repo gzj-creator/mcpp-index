@@ -156,12 +156,14 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
+            mcpp_version: "0.0.95"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
+            mcpp_version: "0.0.95"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
@@ -175,7 +177,7 @@ jobs:
             # so the older floor is sound. Drop once #230 is fixed.
             mcpp_version: "0.0.94" 
     env:
-      MCPP_EFFECTIVE: ${{ matrix.mcpp_version || env.MCPP_VERSION }}
+      MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore mcpp registry cache
@@ -242,7 +244,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      MCPP_EFFECTIVE: ${{ matrix.mcpp_version || env.MCPP_VERSION }}
+      MCPP_EFFECTIVE: ${{ '' }}${{ vars.NONE || '0.0.95' }}   # keep in sync with env.MCPP_VERSION
     steps:
       - uses: actions/checkout@v4
       - name: Restore mcpp registry cache
