@@ -114,14 +114,13 @@ The tests do not include or exercise the separate native module adapter.
 The active workflow pins mcpp 0.0.94. Before opening the replacement PR, the
 branch must provide fresh evidence for all locally available checks:
 
-1. run the descriptor syntax and mirror lint with Lua 5.4;
+1. run the descriptor syntax and mirror lint with the available local Lua 5.5;
 2. parse `pkgs/c/compat.asio.lua` with mcpp 0.0.94;
 3. run the targeted Asio consumer tests from isolated build state with
    `MCPP_INDEX_MIRROR=GLOBAL`;
 4. inspect the generated compile commands for all three public defines;
 5. exercise `mcpp add compat:asio@1.38.1` in an isolated consumer project;
-6. run `mcpp test --workspace` on the local host;
-7. run `git diff --check` and confirm README is identical to `origin/main`.
+6. run `git diff --check` and confirm README is identical to `origin/main`.
 
 The replacement PR must then pass every check instantiated by the live
 workflow, including the Linux, macOS, and Windows workspace matrix. Local macOS
@@ -144,10 +143,10 @@ The replacement PR is limited to:
 ## 8. Acceptance criteria
 
 - upstream version, license, layout, and repeated archive digest are recorded;
-- descriptor grammar and exact Lua 5.4 lint pass;
+- local descriptor lint passes with Lua 5.5, and the workflow's Lua 5.4 lint
+  passes in GitHub Actions;
 - the CLI dependency token is verified through an isolated `mcpp add`;
 - the six targeted consumer tests pass from isolated build state;
-- the local workspace test passes;
 - README has no diff;
 - the replacement PR contains no native module adaptation;
 - all required GitHub Actions jobs pass before maintainer merge;

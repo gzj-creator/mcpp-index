@@ -26,7 +26,7 @@ mcpp self config --mirror CN   # 切换至国内镜像,默认使用 GLOBAL 上�
   用户基于 mcpp 开发并登记进索引的库(如 `tensorvia-cpu`)。其上游通常自带 `mcpp.toml`,描述文件(Form A)只声明
   元数据与下载地址。
 - **第三方 C/C++ 库(`compat`)**:其上游不提供 mcpp 支持,描述文件(Form B)内联构建信息。该类库存在
-  header-only、纯 C 源码、C++23 module wrapper 等形态,可选组件经 `features` 门控;具备镜像资产的包同时提供 GitCode CN 镜像。
+  header-only、纯 C 源码、C++23 module wrapper 等形态,可选组件经 `features` 门控,并配备 GitCode CN 镜像。
 
 ### 参考示例(`.lua` 描述符)
 
@@ -34,7 +34,7 @@ mcpp self config --mirror CN   # 切换至国内镜像,默认使用 GLOBAL 上�
 |------|------|
 | 原生模块库(Form A) | [`mcpplibs.xpkg`](pkgs/x/xpkg.lua) · [`mcpplibs.tinyhttps`](pkgs/t/tinyhttps.lua) · [`tensorvia-cpu`](pkgs/t/tensorvia-cpu.lua) |
 | C 源码 compat(含 `features`) | [`compat.cjson`](pkgs/c/compat.cjson.lua) · [`compat.zlib`](pkgs/c/compat.zlib.lua) |
-| header-only(含 public 配置/系统链接) | [`compat.eigen`](pkgs/c/compat.eigen.lua) · [`compat.asio`](pkgs/c/compat.asio.lua) |
+| header-only(含 `features`) | [`compat.eigen`](pkgs/c/compat.eigen.lua) |
 | 外部构建系统(`install()` 从源码构建) | [`compat.openblas`](pkgs/c/compat.openblas.lua)(Make) · [`compat.opencv`](pkgs/c/compat.opencv.lua)(CMake) |
 | C++23 module wrapper | [`nlohmann.json`](pkgs/n/nlohmann.json.lua) · [`marzer.tomlplusplus`](pkgs/m/marzer.tomlplusplus.lua) |
 
