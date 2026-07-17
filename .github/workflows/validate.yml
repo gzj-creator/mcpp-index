@@ -16,7 +16,7 @@ env:
   # member, which links against spdlog's feature-compiled src/*.cpp. Also
   # carries standard = "c++fly" in the resolver grammar (0.0.91), so c++fly
   # descriptors get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.94"
+  MCPP_VERSION: "0.0.95"
 
 jobs:
   lint:
