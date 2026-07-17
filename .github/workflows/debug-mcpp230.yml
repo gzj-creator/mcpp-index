@@ -12,6 +12,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: report codepages
+        shell: powershell
+        run: |
+          "ACP: $([System.Text.Encoding]::Default.CodePage)"
+          chcp
+          Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage" | Select-Object ACP, OEMCP | Format-List
+      - name: enable full WER dumps
+        shell: powershell
+        run: |
+          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Force | Out-Null
+          Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" DumpType -Value 2 -Type DWord
+          Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" DumpFolder -Value "D:\dumps" -Type ExpandString
+          New-Item -ItemType Directory -Force -Path D:\dumps | Out-Null
       - name: Download mcpp
         shell: bash
         run: |
@@ -32,27 +45,39 @@ jobs:
           $p = Start-Process -FilePath $env:MCPP -ArgumentList "test" -NoNewWindow -Wait -PassThru `
                -RedirectStandardOutput out.txt -RedirectStandardError err.txt
           "RAW EXIT CODE: 0x{0:X8}" -f $p.ExitCode
-      - name: analyze minidump with cdb
+      - name: scan walked trees for anomalous filenames
         if: always()
         shell: powershell
         run: |
-          $cdb = "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
-          if (!(Test-Path $cdb)) { "cdb not found"; Get-ChildItem "C:\Program Files (x86)\Windows Kits" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 3 FullName; exit 0 }
-          $dmp = Get-ChildItem "$env:LOCALAPPDATA\CrashDumps\mcpp.exe.*.dmp" | Select-Object -First 1
-          if (!$dmp) { "no dump found"; exit 0 }
-          & $cdb -z $dmp.FullName -c ".exr -1; .ecxr; k 40; lm m mcpp; q"
+          $roots = @("tests\examples\archive\.mcpp", "$env:USERPROFILE\.mcpp\registry\data\xpkgs")
+          foreach ($r in $roots) {
+            if (!(Test-Path $r)) { "missing: $r"; continue }
+            "scanning $r"
+            Get-ChildItem -LiteralPath $r -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+              $n = $_.FullName
+              foreach ($ch in $n.ToCharArray()) {
+                $c = [int]$ch
+                if (($c -ge 0xD800 -and $c -le 0xDFFF) -or $c -eq 0xFFFD -or $c -gt 0x2FFF) {
+                  "ANOMALY: U+{0:X4} in: {1}" -f $c, $n
+                  break
+                }
+              }
+            }
+          }
+          "scan done"
       - name: stage dump into workspace
         if: always()
         shell: bash
         run: |
           mkdir -p crashdump
+          cp /d/dumps/*.dmp crashdump/ 2>/dev/null || true
           cp "$LOCALAPPDATA"/CrashDumps/mcpp.exe.*.dmp crashdump/ 2>/dev/null || true
-          cp tests/examples/archive/out.txt tests/examples/archive/err.txt crashdump/ 2>/dev/null || true
-          ls -la crashdump/
+          ls -la crashdump/ || true
       - name: upload dump artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mcpp-crash-dump
+          name: mcpp-full-dump
           path: crashdump/
           if-no-files-found: warn
+          compression-level: 9
