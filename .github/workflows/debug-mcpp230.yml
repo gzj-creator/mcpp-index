@@ -22,29 +22,32 @@ jobs:
           mkdir -p "$HOME/.mcpp/registry"
           cp -a "$root/registry/." "$HOME/.mcpp/registry/"
           echo "MCPP=$(cygpath -m "$root/bin/mcpp.exe")" >> "$GITHUB_ENV"
-      - name: repro with verbose + raw exit code
+      - name: repro (expect 0xC0000409)
         shell: powershell
         continue-on-error: true
         env:
           MCPP_INDEX_MIRROR: GLOBAL
-          MCPP_LOG_LEVEL: debug
         run: |
           cd tests\examples\archive
-          $p = Start-Process -FilePath $env:MCPP -ArgumentList "test","--verbose" -NoNewWindow -Wait -PassThru `
+          $p = Start-Process -FilePath $env:MCPP -ArgumentList "test" -NoNewWindow -Wait -PassThru `
                -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          "RAW EXIT CODE: $($p.ExitCode) (0x{0:X8})" -f $p.ExitCode
-          "===== stdout tail ====="
-          Get-Content out.txt -Tail 40
-          "===== stderr tail ====="
-          Get-Content err.txt -Tail 80
-      - name: dump logs
+          "RAW EXIT CODE: 0x{0:X8}" -f $p.ExitCode
+      - name: analyze minidump with cdb
         if: always()
-        shell: bash
+        shell: powershell
         run: |
-          echo "===== ls ~/.mcpp ====="; ls -la "$HOME/.mcpp" 2>/dev/null || true
-          echo "===== ls ~/.mcpp/log ====="; ls -la "$HOME/.mcpp/log" 2>/dev/null || true
-          for f in "$HOME"/.mcpp/log/mcpp.log*; do
-            [ -f "$f" ] || continue
-            echo "===== $f (last 200 lines) ====="; tail -n 200 "$f"
-          done
-          echo "===== crash dumps ====="; ls -la "$LOCALAPPDATA/CrashDumps" 2>/dev/null || true
+          $cdb = "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
+          if (!(Test-Path $cdb)) { "cdb not found"; Get-ChildItem "C:\Program Files (x86)\Windows Kits" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 3 FullName; exit 0 }
+          $dmp = Get-ChildItem "$env:LOCALAPPDATA\CrashDumps\mcpp.exe.*.dmp" | Select-Object -First 1
+          if (!$dmp) { "no dump found"; exit 0 }
+          & $cdb -z $dmp.FullName -c ".exr -1; .ecxr; k 40; lm m mcpp; q"
+      - name: upload dump artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcpp-crash-dump
+          path: |
+            ~/AppData/Local/CrashDumps/mcpp.exe.*.dmp
+            tests/examples/archive/out.txt
+            tests/examples/archive/err.txt
+          if-no-files-found: warn
