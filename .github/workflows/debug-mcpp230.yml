@@ -1,0 +1,46 @@
+name: debug-mcpp230
+on:
+  push:
+    branches: [ "debug/mcpp230-windows-repro" ]
+permissions:
+  contents: read
+env:
+  MCPP_VERSION: "0.0.95"
+jobs:
+  win-repro:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download mcpp
+        shell: bash
+        run: |
+          curl -L -fsS -o mcpp.zip \
+            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/mcpp-${MCPP_VERSION}-windows-x86_64.zip"
+          powershell -NoProfile -Command "Expand-Archive -Force -Path 'mcpp.zip' -DestinationPath '.'"
+          root="$PWD/mcpp-${MCPP_VERSION}-windows-x86_64"
+          mkdir -p "$HOME/.mcpp/registry"
+          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
+          echo "MCPP=$(cygpath -m "$root/bin/mcpp.exe")" >> "$GITHUB_ENV"
+      - name: repro archive member with debug log
+        shell: bash
+        continue-on-error: true
+        env:
+          MCPP_INDEX_MIRROR: GLOBAL
+          MCPP_LOG_LEVEL: debug
+        run: |
+          "$MCPP" --version
+          set +e
+          "$MCPP" test -p archive
+          rc=$?
+          echo "==== mcpp test exit code: $rc ===="
+      - name: dump mcpp.log tail
+        if: always()
+        shell: bash
+        run: |
+          for f in "$HOME"/.mcpp/log/*.log; do
+            echo "===== $f (last 150 lines) ====="
+            tail -n 150 "$f" || true
+          done
+          echo "===== Windows Application event log (crashes) ====="
+          powershell -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001} -MaxEvents 10 -ErrorAction SilentlyContinue | Format-List TimeCreated, Message" || true
