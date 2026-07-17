@@ -31,15 +31,22 @@ consumer contract and requires its own compatibility evidence.
 - Tag commit: `bbecff21a23b97c34641f0f1f08b28c91b9c77cf`.
 - License: Boost Software License 1.0 (`BSL-1.0`), confirmed from upstream
   `COPYING` and `LICENSE_1_0.txt` at the tag.
-- Archive URL:
-  `https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz`.
-- Archive SHA-256:
+- Linux/macOS archive: tag tarball, SHA-256
   `2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc`.
+- Windows archive: the same tag's ZIP encoding, SHA-256
+  `c4557a5a07ff8aa9c37bd141b7d1a6ba2b1bad5557d97762ad27aaf0091c665b`.
 
-Two independent downloads produced the same SHA-256. The archive is wrapped in
-`asio-asio-1-38-1/`, and its public entry header is
+Two independent downloads of each archive encoding produced the same
+platform-specific SHA-256. Both archives are wrapped in
+`asio-asio-1-38-1/`, and their public entry header is
 `asio-asio-1-38-1/include/asio.hpp`. Therefore `*/include` is the required
 consumer include root.
+
+The tag tarball also contains `asio/include -> ../include` and
+`asio/src -> ../src` POSIX symlinks. The Windows xlings extraction path exited
+with code 127 immediately after downloading that tarball. The Windows entry
+therefore uses GitHub's ZIP encoding of the same tagged commit, following the
+repository's existing platform-specific archive pattern.
 
 The upstream tag is annotated but not cryptographically signed. Reproducibility
 is enforced by the descriptor's pinned archive digest.
@@ -53,7 +60,8 @@ so the package uses an inline Form B descriptor at
 - namespace: `compat`;
 - full package name: `compat.asio`;
 - published version: bare version `1.38.1`;
-- platforms: Linux, macOS, and Windows use the same portable source archive;
+- platforms: Linux and macOS use the tag tarball; Windows uses the tag ZIP to
+  avoid the tarball's POSIX symlink extraction failure;
 - include root: `*/include`;
 - build target: a generated C anchor provides the buildable library target
   required by the current package resolver;
@@ -88,7 +96,7 @@ which is the current repository's supported fallback. It does not fabricate a
 CN entry or alias the upstream URL as a CN mirror.
 
 A maintainer may add a legitimate CN mirror later by uploading the exact same
-archive bytes and retaining the pinned SHA-256.
+bytes for each platform archive and retaining its pinned SHA-256.
 
 ## 5. Consumer and test design
 
@@ -147,6 +155,7 @@ The replacement PR is limited to:
   passes in GitHub Actions;
 - the CLI dependency token is verified through an isolated `mcpp add`;
 - the six targeted consumer tests pass from isolated build state;
+- the Windows workspace job downloads the ZIP and completes the Asio tests;
 - README has no diff;
 - the replacement PR contains no native module adaptation;
 - all required GitHub Actions jobs pass before maintainer merge;

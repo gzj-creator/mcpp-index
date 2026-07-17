@@ -25,8 +25,11 @@ package = {
         },
         windows = {
             ["1.38.1"] = {
-                url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.tar.gz",
-                sha256 = "2827b229972be80cdb14e5497962fa393d1adf036b5869e2b9c99f644daadacc",
+                -- The tag tarball contains two POSIX symlinks. xlings cannot
+                -- materialize them on the Windows runner, so use GitHub's ZIP
+                -- encoding of the same tagged commit on this platform.
+                url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-1.zip",
+                sha256 = "c4557a5a07ff8aa9c37bd141b7d1a6ba2b1bad5557d97762ad27aaf0091c665b",
             },
         },
     },
