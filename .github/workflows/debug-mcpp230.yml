@@ -41,13 +41,18 @@ jobs:
           $dmp = Get-ChildItem "$env:LOCALAPPDATA\CrashDumps\mcpp.exe.*.dmp" | Select-Object -First 1
           if (!$dmp) { "no dump found"; exit 0 }
           & $cdb -z $dmp.FullName -c ".exr -1; .ecxr; k 40; lm m mcpp; q"
+      - name: stage dump into workspace
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p crashdump
+          cp "$LOCALAPPDATA"/CrashDumps/mcpp.exe.*.dmp crashdump/ 2>/dev/null || true
+          cp tests/examples/archive/out.txt tests/examples/archive/err.txt crashdump/ 2>/dev/null || true
+          ls -la crashdump/
       - name: upload dump artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mcpp-crash-dump
-          path: |
-            ~/AppData/Local/CrashDumps/mcpp.exe.*.dmp
-            tests/examples/archive/out.txt
-            tests/examples/archive/err.txt
+          path: crashdump/
           if-no-files-found: warn
