@@ -9,6 +9,7 @@
 [workspace]
 members = [
     "tests/examples/archive",
+    "tests/examples/asio",
     "tests/examples/build-mcpp",
     "tests/examples/cjson",
     "tests/examples/core",
