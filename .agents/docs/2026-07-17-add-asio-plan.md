@@ -84,7 +84,18 @@ The default `standalone` feature contributes these public preprocessor defines:
 
 - `ASIO_STANDALONE`;
 - `ASIO_HEADER_ONLY`;
-- `ASIO_DISABLE_BOOST_CONTEXT_FIBER`.
+- `ASIO_DISABLE_BOOST_CONTEXT_FIBER`;
+- `ASIO_HAS_THREADS` — asio's own thread detection keys off CRT macros
+  (`_MT`/`_REENTRANT`/`_POSIX_THREADS`) that the workspace's llvm-on-Windows
+  toolchain does not define. Without the pin asio silently selects
+  `null_thread` and every internal-thread operation (notably the
+  waitable-timer wait thread behind `steady_timer`) throws
+  `operation_not_supported` (10045) at runtime — observed as the core,
+  coroutine, and network consumer tests failing on the Windows runner while
+  the thread-free tests passed. asio only ever tests
+  `defined(ASIO_HAS_THREADS)`, and the POSIX pthread selection still runs
+  beneath it, so the pin is a no-op on platforms where detection already
+  works (re-verified by the Linux consumer suite).
 
 mcpp 0.0.94 accepts feature `defines` in the current xpkg parser and propagates
 them to consumers. The Asio surface test rejects builds where any of these

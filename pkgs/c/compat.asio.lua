@@ -63,6 +63,15 @@ int mcpp_compat_asio_headers_anchor(void) { return 0; }
         targets = { ["asio"] = { kind = "lib" } },
         -- Explicitly pin the package's public configuration. `standalone` is a
         -- default feature so its defines propagate to every consumer TU.
+        --
+        -- ASIO_HAS_THREADS: asio's own thread detection keys off CRT macros
+        -- (_MT/_REENTRANT/_POSIX_THREADS) that the workspace's llvm-on-Windows
+        -- toolchain does not define, so asio silently selects null_thread and
+        -- every internal-thread operation (e.g. the waitable-timer wait thread)
+        -- throws operation_not_supported (10045) at runtime. All supported
+        -- targets are multithreaded; pin the detection result. asio only ever
+        -- tests defined(ASIO_HAS_THREADS), and on POSIX the pthread selection
+        -- below it still runs, so this is a no-op where detection already works.
         features = {
             ["default"] = { implies = { "standalone" } },
             ["standalone"] = {
@@ -70,6 +79,7 @@ int mcpp_compat_asio_headers_anchor(void) { return 0; }
                     "ASIO_STANDALONE",
                     "ASIO_HEADER_ONLY",
                     "ASIO_DISABLE_BOOST_CONTEXT_FIBER",
+                    "ASIO_HAS_THREADS",
                 },
             },
         },
