@@ -174,7 +174,11 @@ jobs:
     env:
       MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
+      # Full history: the member-selection step below diffs against the PR
+      # base to decide which workspace members to test.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Restore mcpp registry cache
         uses: actions/cache@v4
         with:
@@ -226,14 +230,87 @@ jobs:
         shell: bash
         run: '"$MCPP" index update'
 
-      - name: mcpp test --workspace
+      # ── Selective member testing ──────────────────────────────────────
+      # `mcpp test --workspace` builds every member (opencv, ffmpeg, …) and
+      # dominates CI wall-clock, while a PR almost always touches one
+      # package. Map changed files → affected members and test only those:
+      #   pkgs/<x>/<lib>.lua    → members whose mcpp.toml references <lib>
+      #   tests/examples/<m>/** → member <m>
+      # Run the FULL workspace when the change can affect everything:
+      # non-PR events (push to main, the nightly cron, dispatch), this
+      # workflow file (it carries the mcpp version pins, so a version bump
+      # always re-validates every package), the workspace manifest, or
+      # shared test scripts. Docs-only changes select nothing.
+      # Note: bash 3.2 on macOS runners — no associative arrays here.
+      - name: Select affected workspace members
+        shell: bash
+        run: |
+          full() { echo "MEMBERS=__ALL__" >> "$GITHUB_ENV"; echo "full run: $1"; exit 0; }
+          [ "${{ github.event_name }}" = "pull_request" ] || full "event=${{ github.event_name }}"
+          base="origin/${{ github.base_ref }}"
+          changed=$(git diff --name-only "$base"...HEAD)
+          printf 'changed files vs %s:\n%s\n' "$base" "$changed"
+          sel=""
+          add() { case " $sel " in *" $1 "*) ;; *) sel="$sel $1" ;; esac; }
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              .github/workflows/validate.yml|tests/*.sh|tools/*) full "$f" ;;
+              mcpp.toml)
+                # Workspace manifest. Every new-package PR appends to the
+                # members list, so that alone must NOT force a full run:
+                # select the added members; anything else in this file
+                # (indices, settings) affects everyone → full.
+                if ! diff -q <(git show "$base:mcpp.toml" | grep -v 'tests/examples/') \
+                             <(grep -v 'tests/examples/' mcpp.toml) >/dev/null; then
+                  full "mcpp.toml non-member change"
+                fi
+                for p in $(comm -13 <(git show "$base:mcpp.toml" | grep -o 'tests/examples/[A-Za-z0-9._-]*' | sort -u) \
+                                    <(grep -o 'tests/examples/[A-Za-z0-9._-]*' mcpp.toml | sort -u)); do
+                  add "${p#tests/examples/}"
+                done ;;
+              tests/examples/*)
+                m=${f#tests/examples/}; m=${m%%/*}
+                # A deleted/renamed member dir implies a mcpp.toml edit,
+                # which already forces a full run above.
+                [ -d "tests/examples/$m" ] && add "$m" ;;
+              pkgs/*.lua|pkgs/*/*.lua)
+                lib=$(basename "$f" .lua); lib=${lib#compat.}
+                hit=0
+                for mt in tests/examples/*/mcpp.toml; do
+                  if grep -q "$lib" "$mt"; then add "$(basename "$(dirname "$mt")")"; hit=1; fi
+                done
+                [ "$hit" = 1 ] || echo "note: no workspace member exercises $f" ;;
+              *.md|docs/*|.agents/*|.github/*) : ;;
+              *) full "unclassified change: $f" ;;
+            esac
+          done <<EOF
+          $changed
+          EOF
+          sel=${sel# }
+          echo "MEMBERS=$sel" >> "$GITHUB_ENV"
+          echo "selected members: ${sel:-<none>}"
+
+      - name: mcpp test (workspace or affected members)
         shell: bash
         env:
           MCPP_INDEX_MIRROR: GLOBAL
         run: |
           "$MCPP" --version
           # No `timeout` wrapper: absent on macOS runners; job-level timeout-minutes bounds it.
-          "$MCPP" test --workspace
+          if [ "$MEMBERS" = "__ALL__" ]; then
+            "$MCPP" test --workspace
+          elif [ -z "$MEMBERS" ]; then
+            echo "No workspace member affected by this change — nothing to test."
+          else
+            rc=0
+            for m in $MEMBERS; do
+              echo "::group::mcpp test -p $m"
+              "$MCPP" test -p "$m" || rc=1
+              echo "::endgroup::"
+            done
+            exit $rc
+          fi
       - name: tinyhttps module package smoke
         shell: bash
         env:
