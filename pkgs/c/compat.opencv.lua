@@ -93,6 +93,17 @@ package = {
         targets = {
             opencv = { kind = "lib" },
         },
+        -- `unifont`: Unicode/CJK putText coverage. Pulls the font asset
+        -- package and defines HAVE_UNIFONT (drawing_text.cpp gates on it);
+        -- build.mcpp sees MCPP_FEATURE_UNIFONT=1 and hex-embeds the font
+        -- (builtin_font_uni.h). Not part of the reference profile — the
+        -- embed machinery is byte-faithful to cmake's ocv_blob2hdr either way.
+        features = {
+            ["unifont"] = {
+                deps    = { ["compat.opencv-unifont"] = "1.0.0" },
+                defines = { "HAVE_UNIFONT" },
+            },
+        },
         linux = {
             ldflags = { "-lpthread", "-ldl" },
         },
@@ -376,6 +387,36 @@ int main() {
     // 1. fonts
     blob2hdr(wrap / "modules/imgproc/fonts/Rubik.ttf.gz",        out / "builtin_font_sans.h",   "OcvBuiltinFontSans");
     blob2hdr(wrap / "modules/imgproc/fonts/Rubik-Italic.ttf.gz", out / "builtin_font_italic.h", "OcvBuiltinFontItalic");
+
+    // 1b. unifont feature: hex-embed the CJK font pulled in by the
+    //     compat.opencv-unifont dependency. Its payload is a raw .gz the
+    //     installer parks byte-preserved in the store's shared
+    //     data/runtimedir/ (no MCPP_DEP_<NAME>_DIR contract var yet), so
+    //     resolve it relative to this package's store location, with a
+    //     verdir sweep as fallback.
+    if (std::getenv("MCPP_FEATURE_UNIFONT")) {
+        const char* fname = "WenQuanYiMicroHei.ttf.gz";
+        fs::path font;
+        // <data>/xpkgs/<pkg>/<ver> -> <data>/runtimedir/<fname>
+        fs::path rt = man.parent_path().parent_path().parent_path() / "runtimedir" / fname;
+        if (fs::exists(rt)) font = rt;
+        if (font.empty()) {
+            std::error_code ec;
+            for (auto& e : fs::directory_iterator(man.parent_path().parent_path(), ec)) {
+                if (e.path().filename().string().find("opencv-unifont") == std::string::npos) continue;
+                for (auto& v : fs::recursive_directory_iterator(e.path(), ec))
+                    if (v.path().filename() == fname) { font = v.path(); break; }
+                if (!font.empty()) break;
+            }
+        }
+        if (font.empty()) {
+            std::fprintf(stderr, "compat.opencv build.mcpp: unifont feature on but %s not found near %s\n",
+                         fname, man.string().c_str());
+            return 1;
+        }
+        blob2hdr(font, out / "builtin_font_uni.h", "OcvBuiltinFontUni");
+        std::printf("compat.opencv build.mcpp: unifont embedded from %s\n", font.string().c_str());
+    }
 
     // 2. OpenCL kernel embeddings (inert under this profile, byte-faithful)
     for (std::string m : { "core", "imgproc", "geometry" }) {

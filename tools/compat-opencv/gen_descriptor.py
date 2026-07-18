@@ -356,6 +356,17 @@ package = {{
         targets = {{
             opencv = {{ kind = "lib" }},
         }},
+        -- `unifont`: Unicode/CJK putText coverage. Pulls the font asset
+        -- package and defines HAVE_UNIFONT (drawing_text.cpp gates on it);
+        -- build.mcpp sees MCPP_FEATURE_UNIFONT=1 and hex-embeds the font
+        -- (builtin_font_uni.h). Not part of the reference profile — the
+        -- embed machinery is byte-faithful to cmake's ocv_blob2hdr either way.
+        features = {{
+            ["unifont"] = {{
+                deps    = {{ ["compat.opencv-unifont"] = "1.0.0" }},
+                defines = {{ "HAVE_UNIFONT" }},
+            }},
+        }},
         linux = {{
             ldflags = {{ "-lpthread", "-ldl" }},
         }},

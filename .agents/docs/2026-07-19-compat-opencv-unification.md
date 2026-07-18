@@ -47,6 +47,25 @@
 - tests/examples/opencv5 成员与 pkgs/c/compat.opencv5.lua 过渡期保留
   (已发布 opencv 0.0.2 模块 tarball 依赖它),opencv-m v0.0.3 切换后删除。
 
+## R4:unifont feature(随本 PR)
+
+- `pkgs/c/compat.opencv-unifont.lua`:数据资产包 —— 上游 opencv_3rdparty 原始
+  `WenQuanYiMicroHei.ttf.gz`(GLOBAL 直取 raw.githubusercontent,CN 镜像
+  mcpp-res/opencv@unifont-1.0.0,sha256 钉,MD5 与上游 CMake pin 一致)。
+  裸 .gz 不是归档:安装器把它字节保真地放到 store 共享 `data/runtimedir/`
+  (实测),verdir 只有元数据 → 描述符带 asio 式 anchor-TU 空壳 mcpp 段。
+- `compat.opencv` 新 feature `unifont`(0.0.97 features 已支持 deps/defines
+  门控):`deps = { ["compat.opencv-unifont"] = "1.0.0" }` +
+  `defines = { "HAVE_UNIFONT" }`;build.mcpp 见 `MCPP_FEATURE_UNIFONT=1` 时按
+  `MCPP_MANIFEST_DIR/../../../runtimedir/<fname>`(fallback:verdir 扫描)找到
+  字体并 blob2hdr 成 `builtin_font_uni.h`(符号 OcvBuiltinFontUni,与 cmake
+  ocv_blob2hdr 逐字节同构)。无 MCPP_DEP_<NAME>_DIR 契约变量是已知空洞
+  (待提 mcpp 增强)。
+- 成员 tests/examples/opencv-unifont:长式依赖
+  `opencv = { version = "5.0.0", features = ["unifont"] }`,断言
+  `FontFace("uni")` 可用(该内建字体面只在 HAVE_UNIFONT 下存在——本身即
+  feature 探针)且 CJK putText 出墨;默认成员回归不受影响。
+
 ## 合并门槛(先决条件)
 
 **mcpp#240**:#233 消歧后可执行目标的链接输入未跟随改名——依赖包与消费者源文件
