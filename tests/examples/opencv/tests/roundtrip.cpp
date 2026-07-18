@@ -1,6 +1,7 @@
 // compat.opencv end-to-end assertion across core + imgproc + imgcodecs, linked
 // against the static libs built from source by the package's install() CMake hook.
-// Runs on all three supported platforms (linux/macOS/Windows).
+// Windows gated off (see mcpp.toml): no-op main there.
+#ifndef _WIN32
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -26,3 +27,6 @@ int main() {
 
     return 0;
 }
+#else
+int main() { return 0; }
+#endif
