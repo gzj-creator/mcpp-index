@@ -1,6 +1,6 @@
-// build.mcpp for compat.opencv5 — consumer-side synthesis of OpenCV's
+// build.mcpp for compat.opencv — consumer-side synthesis of OpenCV's
 // build-time generated files from the frozen config snapshot. Embedded into
-// pkgs/c/compat.opencv5.lua by tools/compat-opencv5/gen_descriptor.py.
+// pkgs/c/compat.opencv.lua by tools/compat-opencv5/gen_descriptor.py.
 //
 // What it does (all pure transforms of files already in the pinned tarball —
 // nothing is downloaded, nothing depends on the host):
@@ -10,13 +10,13 @@
 //                  (comment-strip + string-escape + md5; faithful port of
 //                  cmake/cl2cpp.cmake; content is #ifdef HAVE_OPENCL-guarded
 //                  and inert in this profile, kept byte-faithful anyway)
-//   3. tu stubs  — one uniquely-named forwarding TU per source, driven by
-//                  mcpp_generated/tu_manifest.txt. Works around mcpp#233
-//                  (object paths fold to <parent-dir>/<basename> — OpenCV's
-//                  modules/*/src/ layout collides), absorbs the
-//                  libjpeg-turbo BITS_IN_JSAMPLE=12/16 same-source
-//                  re-compiles, and carries defines whose values contain
-//                  spaces (mcpp#234) as #define preludes.
+//   3. tu stubs  — ONLY for the libjpeg-turbo BITS_IN_JSAMPLE=12/16
+//                  same-source re-compiles (one .c, three compiles — plain
+//                  sources cannot express that), driven by
+//                  mcpp_generated/tu_manifest.txt. Every other TU is a real
+//                  tarball path in `sources` since mcpp 0.0.97 (#233/#234
+//                  fixed). Stub basenames are group-prefixed so jpeg12 and
+//                  jpeg16 never collide (also dodges mcpp#239).
 // The raw `mcpp:` stdout protocol is used (no `import mcpp;`) so this file
 // has zero non-standard dependencies.
 #include <algorithm>
@@ -26,7 +26,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -87,7 +86,7 @@ const uint32_t MD5::R[64] = {
 
 static std::string slurp(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
-    if (!f) { std::fprintf(stderr, "compat.opencv5 build.mcpp: cannot read %s\n", p.string().c_str()); std::exit(1); }
+    if (!f) { std::fprintf(stderr, "compat.opencv build.mcpp: cannot read %s\n", p.string().c_str()); std::exit(1); }
     std::ostringstream ss; ss << f.rdbuf(); return ss.str();
 }
 static void spew(const fs::path& p, const std::string& content) {
@@ -99,7 +98,7 @@ static void spew(const fs::path& p, const std::string& content) {
     }
     std::ofstream f(p, std::ios::binary);
     f << content;
-    if (!f) { std::fprintf(stderr, "compat.opencv5 build.mcpp: cannot write %s\n", p.string().c_str()); std::exit(1); }
+    if (!f) { std::fprintf(stderr, "compat.opencv build.mcpp: cannot write %s\n", p.string().c_str()); std::exit(1); }
 }
 
 // ── gunzip (raw inflate over the vendored zlib? not available here) ─────
@@ -214,7 +213,7 @@ int main() {
     const char* man_env = std::getenv("MCPP_MANIFEST_DIR");
     const char* out_env = std::getenv("MCPP_OUT_DIR");
     fs::path man = man_env ? man_env : ".";
-    if (!out_env) { std::fprintf(stderr, "compat.opencv5 build.mcpp: MCPP_OUT_DIR unset (mcpp >= 0.0.95 required)\n"); return 1; }
+    if (!out_env) { std::fprintf(stderr, "compat.opencv build.mcpp: MCPP_OUT_DIR unset (mcpp >= 0.0.95 required)\n"); return 1; }
     fs::path out = out_env;
     fs::path gen = man / "mcpp_generated";
 
@@ -224,7 +223,7 @@ int main() {
         if (e.is_directory() && e.path().filename().string().rfind("opencv-", 0) == 0
             && fs::exists(e.path() / "modules")) { wrap = e.path(); break; }
     }
-    if (wrap.empty()) { std::fprintf(stderr, "compat.opencv5 build.mcpp: opencv-* source dir not found under %s\n", man.string().c_str()); return 1; }
+    if (wrap.empty()) { std::fprintf(stderr, "compat.opencv build.mcpp: opencv-* source dir not found under %s\n", man.string().c_str()); return 1; }
 
     // 1. fonts
     blob2hdr(wrap / "modules/imgproc/fonts/Rubik.ttf.gz",        out / "builtin_font_sans.h",   "OcvBuiltinFontSans");
@@ -238,32 +237,24 @@ int main() {
                    out / ("opencl_kernels_" + m + ".hpp"), m);
     }
 
-    // 3. forwarding TU stubs from the manifest
-    //    line grammar:  !prelude<TAB><group><TAB><literal line>       (collect)
-    //                   <group><TAB><include-target>                  (emit stub)
-    std::map<std::string, std::string> preludes;
+    // 3. jpeg12/jpeg16 re-compile stubs from the manifest
+    //    line grammar:  <group><TAB><include-target>
+    //    (group-prefixed filename => unique basenames across jpeg12/jpeg16)
     std::ifstream mf(gen / "tu_manifest.txt");
-    if (!mf) { std::fprintf(stderr, "compat.opencv5 build.mcpp: mcpp_generated/tu_manifest.txt missing\n"); return 1; }
+    if (!mf) { std::fprintf(stderr, "compat.opencv build.mcpp: mcpp_generated/tu_manifest.txt missing\n"); return 1; }
     std::string line;
     int stubs = 0;
     while (std::getline(mf, line)) {
         if (line.empty() || line[0] == '#') continue;
-        std::vector<std::string> f;
-        size_t pos = 0;
-        while (true) {
-            size_t t = line.find('\t', pos);
-            if (t == std::string::npos) { f.push_back(line.substr(pos)); break; }
-            f.push_back(line.substr(pos, t - pos)); pos = t + 1;
-        }
-        if (f[0] == "!prelude" && f.size() == 3) { preludes[f[1]] += f[2] + "\n"; continue; }
-        if (f.size() != 2) continue;
-        const std::string& grp = f[0];
-        const std::string& target = f[1];
-        std::string mangled = target;
+        size_t t = line.find('\t');
+        if (t == std::string::npos) continue;
+        std::string grp = line.substr(0, t);
+        std::string target = line.substr(t + 1);
+        std::string mangled = grp + "_" + target;
         for (char& c : mangled) if (c == '/') c = '_';
         fs::path stub = out / "tu" / grp / mangled;
-        std::string content = "/* compat.opencv5 forwarding TU (" + grp + ") */\n"
-            + preludes[grp] + "#include \"" + target + "\"\n";
+        std::string content = "/* compat.opencv " + grp + " re-compile TU */\n"
+            "#include \"" + target + "\"\n";
         spew(stub, content);
         std::printf("mcpp:generated=%s\n", stub.string().c_str());
         stubs++;
@@ -275,7 +266,7 @@ int main() {
     std::printf("mcpp:rerun-if-changed=%s\n", (gen / "tu_manifest.txt").string().c_str());
     // diagnostics as a non-directive stdout line: stderr writes can interleave
     // into the (buffered) stdout directive stream and corrupt a directive.
-    std::printf("compat.opencv5 build.mcpp: %d stubs, fonts + CL kernels synthesized\n", stubs);
+    std::printf("compat.opencv build.mcpp: %d jpeg12/16 stubs, fonts + CL kernels synthesized\n", stubs);
     std::fflush(stdout);
     return 0;
 }

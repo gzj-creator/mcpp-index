@@ -17,8 +17,9 @@ point — the compat package is the single source of truth for the recipe.
 Usage: gen_descriptor.py <builddir> <version> <sha256> <out.lua>
 """
 
+import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 GEN_FILES = [
     "config.h",
@@ -83,6 +84,32 @@ def main() -> None:
                for line in (builddir / "sources.txt").read_text().splitlines()
                if line.strip()]
     n_asm = sum(1 for s in sources if s.endswith(".asm"))
+
+    # Compress the per-file list with directory globs / brace alternation
+    # (mcpp >= 0.0.97, #228): a whole-dir glob only when the compiled set
+    # equals every same-extension file in that tarball directory (the
+    # configure profile excludes files per component, so exactness is
+    # checked against the source tree — FFMPEG_SRC env).
+    ffsrc = os.environ.get("FFMPEG_SRC")
+    if ffsrc:
+        from collections import defaultdict
+        by_dir = defaultdict(list)
+        for e in sources:
+            p = PurePosixPath(e[2:])
+            by_dir[(str(p.parent), p.suffix)].append(p.name)
+        compressed = []
+        for (d, suf), names in sorted(by_dir.items()):
+            on_disk = sorted(x.name for x in Path(ffsrc, d).glob(f"*{suf}"))
+            if sorted(names) == on_disk and len(names) > 1:
+                compressed.append(f"*/{d}/*{suf}")
+            elif len(names) == 1:
+                compressed.append(f"*/{d}/{names[0]}")
+            else:
+                stems = ",".join(sorted(n[: -len(suf)] for n in names))
+                compressed.append(f"*/{d}/{{{stems}}}{suf}")
+        print(f"gen_descriptor: sources compressed {len(sources)} files -> "
+              f"{len(compressed)} globs")
+        sources = compressed
 
     gen_entries = []
     for rel in GEN_FILES:

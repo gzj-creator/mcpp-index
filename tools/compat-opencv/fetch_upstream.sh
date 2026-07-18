@@ -1,7 +1,7 @@
 #!/bin/sh
 # fetch_upstream.sh — download + extract the pinned official OpenCV tarball
-# for maintainer-time regeneration of the compat.opencv5 descriptor.
-# Consumers never need this: they get OpenCV via the compat.opencv5 package.
+# for maintainer-time regeneration of the compat.opencv descriptor.
+# Consumers never need this: they get OpenCV via the compat.opencv package.
 #
 # Prints the extracted source root on stdout.
 set -eu
