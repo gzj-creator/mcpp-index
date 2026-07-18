@@ -60,11 +60,16 @@ description: Use when adding a new third-party library/package to the mcpp-index
    - `xpm` 须覆盖三平台(linux/macosx/windows),每个版本包含 `url = { GLOBAL=…, CN=… }` 与 `sha256`。
    - 版本号采用**裸版本**(如 `"1.2.3"`),不含前导 `v`;下载 URL 中可保留上游的 `…/v1.2.3.tar.gz` 形式。
 5. **识别可门控的可选组件并实现 feature**(参见下文“feature 机制”)。feature 仅能门控 **sources**。
-6. **编写最小工程** `tests/examples/<short>/`(`short` 为包名去除 `compat.`/`mcpplibs.` 前缀后的结果)。
-   - 包含 `mcpp.toml`(其 `[indices].compat = { path = "../../.." }` 指回仓根)与一个 `src/main.*`,
-     后者须包含**可失败的有效断言**(`return ok ? 0 : 1`)。
+6. **编写测试工程(workspace 成员)** `tests/examples/<short>/`(`short` 为包名去除 `compat.`/`mcpplibs.`
+   前缀后的结果;公开模块包用 `<name>-module`),并把它加进仓根 `mcpp.toml` 的 `[workspace].members`。
+   - 包含 `mcpp.toml` 与 `tests/*.cpp`,后者须包含**可失败的有效断言**(`return ok ? 0 : 1`)。
+   - 成员声明**恰好一条** `[indices] <ns> = { path = "../../.." }`,把所消费命名空间重定向到
+     本 checkout(公开模块包用 `default`,即内建 mcpplibs 命名空间;mcpp ≥ 0.0.97)。
+     单条是硬约束:xlings 对 >1 个项目级 index repo 静默失败(mcpp#238);根级集中化待其修复。
+   - 非全平台包按 `[target.'cfg(...)'.dependencies]` 门控依赖,测试源码在被门控掉的平台上
+     编译为 no-op `main`(`#ifdef __linux__ … #else int main(){return 0;} #endif` 模式)。
    - 如需测试 feature,依赖采用长式声明 `name = { version = "…", features = ["…"] }`。
-7. **本地验证**(使用与 CI 相同版本的 mcpp,详见下文“本地验证”)。必须实际执行 `mcpp build` 与 `mcpp run` 并通过。
+7. **本地验证**(使用与 CI 相同版本的 mcpp,详见下文“本地验证”)。必须实际执行 `mcpp test -p <member>` 并通过。
 8. **更新 README**:在对应分类表中新增一条记录。
 9. **撰写设计文档** `.agents/docs/<YYYY-MM-DD>-add-<lib>-plan.md`,记录形态判定、镜像、feature 评估、验证结论
    与注意事项。
@@ -72,8 +77,9 @@ description: Use when adding a new third-party library/package to the mcpp-index
     [docs/repository-and-schema.md](../../../docs/repository-and-schema.md)。
 11. **提交变更**:由 `main` 切出新分支,依次 commit、push、开 PR(不应直接推送 `main`)。PR 描述应载明形态、镜像、
     feature 与验证结论。
-12. **确认 CI 通过**:`detect` 应仅选中本库对应的 example(`smoke-full-linux` 与 `smoke-portable` 显示 `skipping`),
-    `smoke-examples (<short>)` 通过,`mirror-cn-reachable` 覆盖新增 CN url。合并由维护者执行。
+12. **确认 CI 通过**:`workspace (linux|macos|windows)` 的选择性成员测试应仅选中本库对应成员并通过
+    (日志中 `selected members: <member>`),`lint`(含 `mcpp xpkg parse`)与 `mirror-cn-reachable`
+    覆盖新增描述符与 CN url。合并由维护者执行。
 
 ## feature 机制
 
@@ -113,13 +119,13 @@ root="$PWD/mcpp-$MV-linux-x86_64"
 mkdir -p ~/.mcpp/registry && cp -a "$root/registry/." ~/.mcpp/registry/
 export MCPP="$root/bin/mcpp"
 export MCPP_VENDORED_XLINGS="$root/registry/bin/xlings"
-export MCPP_INDEX_MIRROR=GLOBAL          # CI example 使用 GLOBAL;CN 由 mirror-cn-reachable 单独校验
-MCPP="$MCPP" bash tests/run_example.sh <short>
+export MCPP_INDEX_MIRROR=GLOBAL          # CI 使用 GLOBAL;CN 由 mirror-cn-reachable 单独校验
+rm -rf "tests/examples/<member>/target" "tests/examples/<member>/.mcpp"   # 冷验证:自干净状态走完整管线
+"$MCPP" test -p <member>
 ```
 
-- 输出末尾应包含断言行与 `OK: <short>`。
-- `run_example.sh` 会执行 `rm -rf target .mcpp`,自干净状态走完整管线(fetch、generate、compile、link、run)。
-- 如需查看头文件或源码,解包结果位于 `tests/examples/<short>/.mcpp/.xlings/data/xpkgs/<idx>-x-<name>/<ver>/<wrap>/`。
+- 输出末尾应为 `test result ok`(测试二进制退出码非 0 即失败)。
+- 如需查看头文件或源码,解包结果位于 `tests/examples/<member>/.mcpp/.xlings/data/xpkgs/<idx>-x-<name>/<ver>/<wrap>/`。
 
 ## 常见错误与规避
 

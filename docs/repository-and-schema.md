@@ -4,18 +4,22 @@
 
 ```
 pkgs/<x>/<name>.lua          描述符。<x> 取完整包名首字母(compat.* → c,nlohmann.json → n,imgui → i)
-tests/examples/<short>/      每库最小工程(<short> 为包名去除 compat./mcpplibs. 前缀后的结果)
-  mcpp.toml                  [indices].compat = { path = "../../.." }
-  src/main.{cpp,c}
-tests/run_example.sh <short> 通用 runner:rm -rf target .mcpp,继而 mcpp build 与 mcpp run
-tests/smoke_compat_*.sh      旧全量 smoke,已降级为 nightly/dispatch 保障
+mcpp.toml                    workspace 清单(members 列表)
+tests/examples/<member>/     每库测试工程(workspace 成员;<member> 为包名去前缀,模块包为
+  mcpp.toml                  <name>-module)。恰好一条 [indices] <ns> = { path = "../../.." }
+                             把所消费命名空间重定向到本 checkout(模块包用 default,
+                             mcpp ≥ 0.0.97;单条是硬约束——xlings 多项目级 repo 静默失败,
+                             mcpp#238,修复后再做根级集中化)。依赖按平台自门控
+                             ([target.'cfg(...)'])
+  tests/*.cpp                行为断言(独立 main,退出码非 0 即失败)
 tests/check_mirror_urls.lua  lint:GLOBAL+CN 表完整性,以及 CN 指向 mcpp-res
 tests/list_cn_urls.lua       抽取 CN url,供 mirror-cn-reachable 使用
 README.md                    索引说明与贡献入口
-.github/workflows/validate.yml   CI:lint / mirror-cn-reachable / detect / smoke-examples / smoke-full-linux / smoke-portable
+.github/workflows/validate.yml   CI:lint / mirror-cn-reachable / workspace(3 平台矩阵)
 .agents/docs/<date>-*.md     设计文档惯例
 docs/                        贡献者参考文档(本目录)
 tools/gtc                    gitcode CLI,见 cn-mirror.md
+tools/compat-ffmpeg/ 等      compat 大包的描述符再生成流水线
 .xpkgindex.json              站点配置(标题、链接、install 模板),通常无需改动
 ```
 
@@ -72,13 +76,16 @@ mcpp 跑 `xpkg parse`(strict:未知键即失败),所以需要更新文法/键的
 - 触发条件:PR(改动 `pkgs/**/*.lua`、`tests/**`、`README.md` 或本 workflow)、push 至 main、nightly cron、手动触发。
 - `env.MCPP_VERSION` 为全部 job 使用的 mcpp 版本,本地验证应与之对齐。
 - `lint`(始终运行):lua 语法 `loadfile(f,'t')`;须含 `spec=`/`name=`/`xpm=`;禁止前导 v 版本;执行
-  `check_mirror_urls.lua`。
+  `check_mirror_urls.lua`;再用 CI pin 的 mcpp 对每个描述符跑 `mcpp xpkg parse`(strict,未知键即失败)。
 - `mirror-cn-reachable`(始终运行):逐个 `curl` CN url,均须返回 200。
-- `detect`:PR 时由 `git diff` 取改动的 `pkgs/*/*.lua`,对 basename 去除 `compat.`,若存在
-  `tests/examples/<short>/` 则仅运行该示例;改动 scaffolding/CI 或无对应 example 时,执行全量回归。
-- `smoke-examples (<short>)`:在干净 runner 上运行 `run_example.sh`,`MCPP_INDEX_MIRROR=GLOBAL`。
-- `smoke-full-linux` 与 `smoke-portable`(mac/win):全量回归,仅在 push、nightly、dispatch 或脚手架变更时运行;
-  常规单库 PR 应显示 `skipping`。
+- `workspace (linux|macos|windows)`:整个测试面就是一个 mcpp workspace,**唯一的构建/运行通道**——
+  没有任何 shell 驱动的例外(公开模块包 imgui/ffmpeg/opencv/tinyhttps 也是普通成员,经成员级
+  `[indices] default = { path = "../../.." }` 从 checkout 解析,mcpp ≥ 0.0.97)。
+  - 选择性成员测试:PR 时由 `git diff` 将改动文件映射到受影响成员
+    (`pkgs/<x>/<lib>.lua` → mcpp.toml 引用 `<lib>` 的成员;`tests/examples/<m>/**` → 成员 `<m>`),
+    仅 `mcpp test -p <member>` 这些成员;workflow 本身、workspace 清单非成员部分、`tools/` 等
+    全局性改动 → `mcpp test --workspace` 全量。push/nightly/dispatch 恒为全量。
+  - `~/.mcpp/registry` 缓存携带工具链与已构建的 compat 包,重复运行增量很快。
 
 ## 本地 lint 复现(等价于 CI lint job)
 
