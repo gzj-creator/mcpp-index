@@ -38,7 +38,7 @@ mcpp self config --mirror CN   # 切换至国内镜像,默认使用 GLOBAL 上�
 | 数据资产包(feature 依赖专用) | [`compat.opencv-unifont`](pkgs/c/compat.opencv-unifont.lua)(CJK 字体,由 `compat.opencv` 的 `unifont` feature 拉取) |
 | 外部构建系统(`install()` 从源码构建) | [`compat.openblas`](pkgs/c/compat.openblas.lua)(Make) |
 | 全源码直编(config 快照 + 源列表,零外部构建系统) | [`compat.ffmpeg`](pkgs/c/compat.ffmpeg.lua)(2281 TU 含 NASM 汇编,28 个目录 glob 声明) |
-| 全源码直编 + `build.mcpp` 消费端合成 | [`compat.opencv`](pkgs/c/compat.opencv.lua)(OpenCV 5,458 TU 真实路径直编,SIMD dispatch 保留,字体/内核/jpeg12/16 由包内 build.mcpp 生成,依赖 `compat.ffmpeg` 提供 videoio FFmpeg 后端;旧 install() CMake 形态已移除,`compat.opencv5` 为过渡别名待删) |
+| 全源码直编 + `build.mcpp` 消费端合成 | [`compat.opencv`](pkgs/c/compat.opencv.lua)(OpenCV 5,458 TU 真实路径直编,SIMD dispatch 保留,字体/内核/jpeg12/16 由包内 build.mcpp 生成,依赖 `compat.ffmpeg` 提供 videoio FFmpeg 后端;feature:`unifont` CJK 字体、`dnn` 深度学习模块(+309 TU 含 protobuf/mlas);旧 install() CMake 形态已移除,`compat.opencv5` 为过渡别名待删) |
 | C++23 module wrapper | [`nlohmann.json`](pkgs/n/nlohmann.json.lua) · [`marzer.tomlplusplus`](pkgs/m/marzer.tomlplusplus.lua) |
 
 ### 新增一个包

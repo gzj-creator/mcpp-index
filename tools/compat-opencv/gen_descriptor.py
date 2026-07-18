@@ -40,6 +40,7 @@ SHA256 = sys.argv[4]
 OUT = Path(sys.argv[5])
 HERE = Path(__file__).resolve().parent
 FF_PREFIX = os.environ.get("FFMPEG_PREFIX", "")
+BASE_BLD = Path(os.environ["BASE_BLD"]).resolve() if os.environ.get("BASE_BLD") else None
 FFMPEG_DEP_VERSION = os.environ.get("FFMPEG_DEP_VERSION", "8.1.2")
 
 # ── parse `ninja -t commands` ───────────────────────────────────────────
@@ -67,12 +68,16 @@ for line in (BLD / "ninja-cmds.log").read_text().splitlines():
         if t == "-MD":
             if tool == "nasm": skip = True
             continue
-        if t == "-c" or t == "-isystem": continue
+        if t == "-c": continue
+        if t == "-isystem":
+            # capture the dir (next token) as an ordinary include dir
+            if i + 1 < len(toks): incs.append(toks[i + 1].strip('"'))
+            skip = True; continue
         if t.startswith("-std="): std = t; continue
         if t.startswith("-D"): defs.add(t); continue
         if t.startswith("-I"): incs.append(t[2:].strip('"')); continue
         if t.startswith("-m") or t in ("-O3", "-O2"): mflags.append(t); continue
-        if re.search(r"\.(c|cc|cpp|cxx|asm)$", t) and not t.startswith("-"):
+        if re.search(r"\.(c|cc|cpp|cxx|asm|S)$", t) and not t.startswith("-"):
             src = t
     if src is None:
         continue
@@ -82,7 +87,10 @@ assert compiles, "no compile commands parsed"
 print(f"parsed {len(compiles)} compiles")
 
 ISA_RE = re.compile(r"\.(sse4_1|sse4_2|avx512_skx|avx2|avx|fp16)\.cpp$")
-MODS = ("core", "imgproc", "imgcodecs", "highgui", "videoio", "flann", "geometry")
+MODS = ("core", "imgproc", "imgcodecs", "highgui", "videoio", "flann", "geometry", "dnn")
+# groups that belong to the additive `dnn` feature (sources gated; flags
+# entries stay unconditional — harmless when the feature is off)
+FEATURE_DNN_GROUPS = ("dnn", "protobuf", "mlas", "mlasgemm")
 
 have_ffmpeg = any("cap_ffmpeg" in c[1] for c in compiles)
 print(f"HAVE_FFMPEG in profile: {have_ffmpeg}")
@@ -98,6 +106,9 @@ def dir_key(src_abs, defs):
         return "jpeg"
     if "3rdparty/libpng" in s: return "png"
     if "3rdparty/zlib" in s: return "zlib"
+    if "3rdparty/protobuf" in s: return "protobuf"
+    if "3rdparty/mlas" in s: return "mlas"
+    if "-DMLAS_GEMM_ONLY=1" in defs: return "mlasgemm"   # the mlas-lib re-compile of modules/dnn/…/mlas_threading.cpp
     for mod in MODS:
         if f"modules/{mod}/" in s: return mod
     raise SystemExit(f"unclassified source: {s}")
@@ -116,29 +127,51 @@ for (dk, isa), cs in groups.items():
         if c[2] - common:
             file_extras[c[1]] = c[2] - common
 
+# per-(group, ISA) overlays: dnn's per-ISA define sets differ from the base
+# modules', so the overlay is keyed by group too and emitted with
+# group-scoped globs (**/modules/<mod>/**/*.<isa>.cpp)
 isa_defs, isa_m = {}, {}
 for (dk, isa), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
     if not isa: continue
     for c in cs:
         extra = c[2] - dir_defs[dk]
         extram = tuple(f for f in c[3] if f not in dir_m[dk])
-        if isa not in isa_defs:
-            isa_defs[isa], isa_m[isa] = extra, extram
+        key = (dk, isa)
+        if key not in isa_defs:
+            isa_defs[key], isa_m[key] = extra, extram
         else:
-            assert isa_defs[isa] == extra and isa_m[isa] == extram, \
-                f"ISA overlay mismatch for {isa}: {c[1]}"
+            assert isa_defs[key] == extra and isa_m[key] == extram, \
+                f"ISA overlay mismatch for {key}: {c[1]}"
 
 # exact reconstruction check
 for tool, src_abs, defs, mflags, incs, std in compiles:
     dk = dir_key(src_abs, defs)
     isa = ISA_RE.search(src_abs)
-    want = set(dir_defs[dk]) | (set(isa_defs[isa.group(1)]) if isa else set()) \
+    want = set(dir_defs[dk]) | (set(isa_defs[(dk, isa.group(1))]) if isa else set()) \
          | set(file_extras.get(src_abs, ()))
     assert want == set(defs), f"reconstruction failed for {src_abs}: {want ^ set(defs)}"
 print("exact flag reconstruction: OK")
 
+# feature-off soundness: the base (non-feature) TU set must be EXACTLY the
+# non-dnn reference build's TU set (same parser over its ninja-cmds.log)
+if BASE_BLD is not None:
+    base_tus = set()
+    for line in (BASE_BLD / "ninja-cmds.log").read_text().splitlines():
+        try: toks = shlex.split(line.strip())
+        except ValueError: continue
+        if not toks or Path(toks[0]).name not in ("g++","gcc","cc","c++","clang","clang++","nasm"): continue
+        for t in toks[1:]:
+            if re.search(r"\.(c|cc|cpp|cxx|asm|S)$", t) and not t.startswith("-"):
+                src2 = t if t.startswith("/") else str(BASE_BLD / t)
+                base_tus.add(src2.replace(str(BASE_BLD), "<BLD>").replace(str(SRC), "<SRC>"))
+    this_base = { c[1].replace(str(BLD), "<BLD>").replace(str(SRC), "<SRC>")
+                  for c in compiles if dir_key(c[1], c[2]) not in FEATURE_DNN_GROUPS }
+    assert this_base == base_tus, \
+        f"base TU set drifted vs BASE_BLD: {sorted(this_base ^ base_tus)[:6]}"
+    print(f"feature-off TU set == non-dnn reference build: OK ({len(base_tus)} TUs)")
+
 # common -m flags across every non-asm group must agree (baseline)
-baselines = {dir_m[dk] for dk in dir_defs if dk != "jpeg-asm"}
+baselines = {dir_m[dk] for dk in dir_defs if dk != "jpeg-asm" and dk not in FEATURE_DNN_GROUPS}
 assert len(baselines) == 1, f"baseline -m flags differ between groups: {baselines}"
 baseline_m = [f for f in next(iter(baselines)) if f.startswith("-m")]
 
@@ -153,6 +186,9 @@ GROUP_GLOB = {
     "zlib":   "**/3rdparty/zlib/**",
     "jpeg12": "**/tu/jpeg12/**",
     "jpeg16": "**/tu/jpeg16/**",
+    "protobuf": "**/3rdparty/protobuf/**",
+    "mlas":     "**/3rdparty/mlas/**",
+    "mlasgemm": "**/tu/mlasgemm/**",
 }
 for mod in MODS:
     GROUP_GLOB[mod] = f"**/modules/{mod}/**"
@@ -162,6 +198,7 @@ def wrap_rel(src_abs):
     return str(Path(src_abs).relative_to(SRC))
 
 manifest, sources_real, sources_asm, kernel_files, seen = [], [], [], [], set()
+sources_dnn = []
 per_file_flag_entries = []
 for tool, src_abs, defs, mflags, incs, std in compiles:
     dk = dir_key(src_abs, defs)
@@ -170,12 +207,14 @@ for tool, src_abs, defs, mflags, incs, std in compiles:
         if e not in seen:
             seen.add(e); sources_asm.append(e)
         continue
-    if dk in ("jpeg12", "jpeg16"):
+    if dk in ("jpeg12", "jpeg16", "mlasgemm"):
+        # same-source re-compiles: inexpressible as plain sources -> tu stub.
+        # mlasgemm only exists under the dnn feature ("?dnn" guard).
         tgt = wrap_rel(src_abs)
         key = (dk, tgt)
         if key not in seen:
             seen.add(key)
-            manifest.append(f"{dk}\t{tgt}")
+            manifest.append((f"?dnn\t{dk}\t{tgt}") if dk == "mlasgemm" else f"{dk}\t{tgt}")
         continue
     if src_abs.startswith(str(SRC)):
         e = f"*/{wrap_rel(src_abs)}"
@@ -189,7 +228,8 @@ for tool, src_abs, defs, mflags, incs, std in compiles:
         # snapshot file compiled from the build dir (dispatch stubs)
         e = f"mcpp_generated/{Path(src_abs).relative_to(BLD)}"
     if e in seen: continue
-    seen.add(e); sources_real.append(e)
+    seen.add(e)
+    (sources_dnn if dk in FEATURE_DNN_GROUPS else sources_real).append(e)
     if src_abs in file_extras:
         per_file_flag_entries.append((e, file_extras[src_abs]))
 n_tus = len(sources_real) + len([l for l in manifest]) + len(kernel_files)
@@ -198,35 +238,42 @@ print(f"sources: {len(sources_real)} real C/C++ + {len(sources_asm)} asm; "
 
 # compress the real-source list: whole-directory globs where the compiled
 # set equals every same-extension file in that directory of the tarball
-by_dir = defaultdict(list)
-for e in sources_real:
-    if e.startswith("*/"):
-        p = Path(e[2:])
-        by_dir[("*", str(p.parent), p.suffix)].append(p.name)
-    else:  # mcpp_generated/...
-        p = Path(e)
-        by_dir[("g", str(p.parent), p.suffix)].append(p.name)
-sources_out = []
-for (kind, d, suf), names in sorted(by_dir.items()):
-    if kind == "*":
-        on_disk = sorted(x.name for x in (SRC / d).glob(f"*{suf}"))
-        if sorted(names) == on_disk and len(names) > 1:
-            sources_out.append(f"*/{d}/*{suf}")
-            continue
-        base = f"*/{d}"
-    else:
-        base = d
-    if len(names) == 1:
-        sources_out.append(f"{base}/{names[0]}")
-    else:
-        stems = ",".join(sorted(n[: -len(suf)] for n in names))
-        sources_out.append(f"{base}/{{{stems}}}{suf}")
-print(f"sources compressed: {len(sources_real)} files -> {len(sources_out)} globs")
+def compress(entries):
+    by_dir = defaultdict(list)
+    for e in entries:
+        if e.startswith("*/"):
+            p = Path(e[2:])
+            by_dir[("*", str(p.parent), p.suffix)].append(p.name)
+        else:  # mcpp_generated/...
+            p = Path(e)
+            by_dir[("g", str(p.parent), p.suffix)].append(p.name)
+    out = []
+    for (kind, d, suf), names in sorted(by_dir.items()):
+        if kind == "*":
+            on_disk = sorted(x.name for x in (SRC / d).glob(f"*{suf}"))
+            if sorted(names) == on_disk and len(names) > 1:
+                out.append(f"*/{d}/*{suf}")
+                continue
+            base = f"*/{d}"
+        else:
+            base = d
+        if len(names) == 1:
+            out.append(f"{base}/{names[0]}")
+        else:
+            stems = ",".join(sorted(n[: -len(suf)] for n in names))
+            out.append(f"{base}/{{{stems}}}{suf}")
+    return out
+
+sources_out = compress(sources_real)
+sources_dnn_out = compress(sources_dnn)
+print(f"sources compressed: {len(sources_real)} base files -> {len(sources_out)} globs; "
+      f"{len(sources_dnn)} dnn-feature files -> {len(sources_dnn_out)} globs")
 
 # ── snapshot files (exclude synthesized classes) ────────────────────────
 def rewrite(text):
     out = (text.replace(f'"{SRC}/', '"').replace(f'{SRC}/', '')
-               .replace(f'"{BLD}/', '"').replace(f'{BLD}/', ''))
+               .replace(f'"{BLD}/', '"').replace(f'{BLD}/', '')
+               .replace(str(BLD), "<build>").replace(str(SRC), "<src>"))
     if FF_PREFIX:
         assert FF_PREFIX not in out, "ffmpeg prefix path leaked into snapshot"
     return out
@@ -246,6 +293,33 @@ for p in sorted(BLD.rglob("*")):
     assert "]==]" not in content, f"lua long-bracket collision in {rel}"
     assert len(content) < 200_000, f"unexpectedly large snapshot file {rel}"
     snapshot[f"mcpp_generated/{rel}"] = content
+
+# Three files differ between the feature-off and dnn reference builds, all
+# benignly: opencv_data_config.hpp only in the (now neutralized) build-dir
+# path; opencv_modules.hpp in the HAVE_OPENCV_DNN line (NO compiled TU in
+# either profile reads that macro — it rides features.dnn.defines instead);
+# version_string.inc in the cosmetic build-info string. Ship the FEATURE-OFF
+# (BASE_BLD) copy of all three; assert everything else is byte-identical.
+BASE_PREFERRED = ("modules/core/version_string.inc",
+                  "opencv2/opencv_modules.hpp",
+                  "opencv_data_config.hpp")
+if BASE_BLD is not None:
+    def base_rewrite(text):
+        return (text.replace(f'"{SRC}/', '"').replace(f'{SRC}/', '')
+                    .replace(f'"{BASE_BLD}/', '"').replace(f'{BASE_BLD}/', '')
+                    .replace(str(BASE_BLD), "<build>").replace(str(SRC), "<src>"))
+    drift = []
+    for k in list(snapshot):
+        rel = k[len("mcpp_generated/"):]
+        bp = BASE_BLD / rel
+        if rel in BASE_PREFERRED:
+            snapshot[k] = base_rewrite(bp.read_text(errors="replace"))
+            continue
+        if bp.exists():
+            if base_rewrite(bp.read_text(errors="replace")) != snapshot[k] and not rel.startswith("modules/dnn"):
+                drift.append(rel)
+    assert not drift, f"unexpected snapshot drift vs BASE_BLD: {drift}"
+    print("snapshot: base-preferred trio applied; rest identical across profiles")
 print(f"snapshot: {len(snapshot)} files, {sum(len(v) for v in snapshot.values())//1024} KiB inline")
 
 build_mcpp_src = (HERE / "build_mcpp_template.cpp").read_text()
@@ -275,6 +349,12 @@ def defines_lua(defset):
     return "defines = { " + ", ".join(f'"{D(f)}"' for f in sorted(defset)) + " }"
 
 flags_entries = []
+# curated exception: mlas/lib/platform.cpp calls syscall(2); glibc hides it
+# under __STRICT_ANSI__ (-std=c++NN). The reference build's gcc13 tolerated
+# this only because ninja -k discards the object; consumers must compile it,
+# so the mlas group carries _GNU_SOURCE.
+dir_defs["mlas"] = frozenset(dir_defs.get("mlas", frozenset())) | {"-D_GNU_SOURCE=1"} \
+    if "mlas" in dir_defs else dir_defs.get("mlas")
 for dk in sorted(dir_defs):
     if dk == "jpeg-asm": continue
     key = "cflags" if dk in ("zlib", "png", "jpeg", "jpeg12", "jpeg16") else "cxxflags"
@@ -285,16 +365,22 @@ if ("jpeg-asm", None) in groups:
     cs = groups[("jpeg-asm", None)]
     common = frozenset.intersection(*[c[2] for c in cs])
     flags_entries.append('{ glob = "**/*.asm", ' + defines_lua(common) + " },")
-for isa in sorted(isa_defs):
-    ds = ", ".join(f'"{D(f)}"' for f in sorted(isa_defs[isa]))
-    ms = ", ".join(f'"{m}"' for m in isa_m[isa])
+for (dk, isa) in sorted(isa_defs):
+    ds = ", ".join(f'"{D(f)}"' for f in sorted(isa_defs[(dk, isa)]))
+    ms = ", ".join(f'"{m}"' for m in isa_m[(dk, isa)])
+    g = GROUP_GLOB[dk]
+    g = (g[:-3] if g.endswith("/**") else g) + f"/**/*.{isa}.cpp"
     flags_entries.append(
-        f'{{ glob = "**/*.{isa}.cpp", defines = {{ {ds} }}, cxxflags = {{ {ms} }} }},')
+        f'{{ glob = "{g}", defines = {{ {ds} }}, cxxflags = {{ {ms} }} }},')
 for mod, dk in sorted(kernel_files):
     flags_entries.append(
         f'{{ glob = "**/clsrc/opencl_kernels_{mod}.cpp", ' + defines_lua(dir_defs[dk]) + " },")
 for g, extra in sorted(per_file_flag_entries):
     flags_entries.append(f'{{ glob = "{g}", ' + defines_lua(extra) + " },")
+# curated exception #2: mlas/lib/platform.cpp calls syscall(2) but includes
+# only <sys/syscall.h> (the prototype lives in <unistd.h>; upstream
+# toolchains leak it transitively, the hermetic glibc does not).
+flags_entries.append('{ glob = "*/3rdparty/mlas/lib/platform.cpp", cxxflags = { "-include", "unistd.h" } },')
 
 # upstream reference uses -std=c++17; the index floor is c++23 and the whole
 # TU set builds green under gcc16 -std=c++23 (validated by the O0 spike).
@@ -307,6 +393,22 @@ if have_ffmpeg:
     deps_line = f'        deps = {{ ["compat.ffmpeg"] = "{FFMPEG_DEP_VERSION}" }},\n'
     profile_note = "V4L2 + FFmpeg videoio (compat.ffmpeg dependency)"
 
+# curated exception #3: the vendored mlas tree DECLARES MlasHGemmSupported
+# (mlas.h) and calls it (compute.cpp) but ships no definition — upstream's
+# static-archive selective linking never notices; mcpp links every dep
+# object, so the consumer link does. Provide the semantically-correct stub
+# (fp16 HGemm unsupported -> callers fall back), gated with the feature.
+snapshot["mcpp_generated/mlas_hgemm_stub.cpp"] = (
+    "// compat.opencv curated stub: the vendored mlas subset declares and\n"
+    "// calls MlasHGemmSupported but does not vendor its definition (it\n"
+    "// lives in onnxruntime's full mlas). False = fp16 HGemm unsupported,\n"
+    "// which is the truth for this subset; callers fall back.\n"
+    "#include \"mlas.h\"\n"
+    "bool MLASCALL MlasHGemmSupported(CBLAS_TRANSPOSE, CBLAS_TRANSPOSE) { return false; }\n")
+sources_dnn_out.append("mcpp_generated/mlas_hgemm_stub.cpp")
+
+dnn_sources_lua = lua_list(sources_dnn_out, " " * 20)
+n_dnn = len(sources_dnn)
 L = []
 L.append(f"""-- Auto-generated by tools/compat-opencv/gen_descriptor.py — do not edit by hand.
 -- Recipe: OpenCV {VERSION} built FROM SOURCE by mcpp (no CMake at build
@@ -361,10 +463,20 @@ package = {{
         -- build.mcpp sees MCPP_FEATURE_UNIFONT=1 and hex-embeds the font
         -- (builtin_font_uni.h). Not part of the reference profile — the
         -- embed machinery is byte-faithful to cmake's ocv_blob2hdr either way.
+        -- `dnn`: the deep-learning module as an ADDITIVE feature — its
+        -- sources ({n_dnn} TUs: modules/dnn + vendored protobuf + mlas incl.
+        -- .S kernels) join the same lib; HAVE_OPENCV_DNN arrives via the
+        -- build.mcpp-selected opencv_modules.hpp variant, no extra deps.
         features = {{
             ["unifont"] = {{
                 deps    = {{ ["compat.opencv-unifont"] = "1.0.0" }},
                 defines = {{ "HAVE_UNIFONT" }},
+            }},
+            ["dnn"] = {{
+                defines = {{ "HAVE_OPENCV_DNN" }},
+                sources = {{
+                    {dnn_sources_lua}
+                }},
             }},
         }},
         linux = {{

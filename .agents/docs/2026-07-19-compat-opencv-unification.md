@@ -66,6 +66,29 @@
   `FontFace("uni")` 可用(该内建字体面只在 HAVE_UNIFONT 下存在——本身即
   feature 探针)且 CJK putText 出墨;默认成员回归不受影响。
 
+## R5:dnn feature(随本 PR,compat 层)
+
+- 参考构建换成 BUILD_LIST+dnn(BUILD_PROTOBUF=ON、WITH_FLATBUFFERS=ON,与
+  非 dnn 参考构建并存);生成器带 `BASE_BLD` 交叉断言:**feature-off TU 集与
+  非 dnn 参考构建逐文件相等**(415 TU)。
+- `features.dnn`:加法源集(309 文件 → 23 glob:modules/dnn + vendored
+  protobuf(.cc)+ mlas(.cpp+.S))+ `defines = { "HAVE_OPENCV_DNN" }`。
+- 快照三处 profile 漂移全为良性:data_config 只差构建目录路径(rewrite 现已
+  中和裸路径)、opencv_modules.hpp 只差 HAVE_OPENCV_DNN 行(无 TU 消费,改走
+  featureDefines)、version_string.inc 纯装饰 —— 统一船 base 版,变体机制不需要。
+- ISA overlay 改按(组×ISA)键控发射(dnn 的 per-ISA 定义集与基础模块不同)。
+- `-isystem` 目录现纳入 include_dirs 收集(protobuf 头此前被丢)。
+- 三个策划性例外(均注释在生成器里):mlas 组 `_GNU_SOURCE`;
+  mlas/lib/platform.cpp `-include unistd.h`(上游靠传递包含侥幸);
+  `MlasHGemmSupported` stub(vendored 子集声明+调用但未带定义,上游静态库
+  按需抽取掩盖,mcpp 全对象链接暴露 —— stub 返回 false = 语义正确回退)。
+- 同源双编译第二例:mlas_threading.cpp(mlas 库版 vs dnn 版)→ tu-stub 通道,
+  manifest 新增 `?dnn` feature 守卫前缀语法。
+- 成员 tests/examples/opencv-dnn(测试文件特意不叫 dnn.cpp —— 会与依赖包
+  modules/dnn/src/dnn.cpp 相撞,#233 家族在 test-scan 边亦漏,已补充至 #240)。
+- 模块层(opencv-m 的 `opencv.dnn` 接口 + 模块包 feature 转发)为后续工作:
+  模块包把自己的 feature 转发给依赖(`opencv/dnn` 式)尚无文法,届时视需要提 mcpp 增强。
+
 ## 合并门槛(先决条件)
 
 **mcpp#240**:#233 消歧后可执行目标的链接输入未跟随改名——依赖包与消费者源文件

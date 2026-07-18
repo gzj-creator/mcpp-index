@@ -268,14 +268,23 @@ int main() {
     }
 
     // 3. jpeg12/jpeg16 re-compile stubs from the manifest
-    //    line grammar:  <group><TAB><include-target>
-    //    (group-prefixed filename => unique basenames across jpeg12/jpeg16)
+    //    line grammar:  [?<feature><TAB>]<group><TAB><include-target>
+    //    (group-prefixed filename => unique basenames across groups; a
+    //    leading ?<feature> guard skips the stub unless MCPP_FEATURE_<F>=1)
     std::ifstream mf(gen / "tu_manifest.txt");
     if (!mf) { std::fprintf(stderr, "compat.opencv build.mcpp: mcpp_generated/tu_manifest.txt missing\n"); return 1; }
     std::string line;
     int stubs = 0;
     while (std::getline(mf, line)) {
         if (line.empty() || line[0] == '#') continue;
+        if (line[0] == '?') {
+            size_t g = line.find('\t');
+            if (g == std::string::npos) continue;
+            std::string feat = line.substr(1, g - 1);
+            for (char& c : feat) c = (c >= 'a' && c <= 'z') ? char(c - 32) : c;
+            if (!std::getenv(("MCPP_FEATURE_" + feat).c_str())) continue;
+            line = line.substr(g + 1);
+        }
         size_t t = line.find('\t');
         if (t == std::string::npos) continue;
         std::string grp = line.substr(0, t);

@@ -1,0 +1,13 @@
+# compat.opencv `dnn` feature test: the deep-learning module as an ADDITIVE
+# feature (+309 TUs: modules/dnn + vendored protobuf + mlas incl. .S
+# kernels) joining the same lib. Linux-only like the base package; no-op
+# main elsewhere.
+[package]
+name    = "opencv-dnn-tests"
+version = "0.1.0"
+
+[indices]
+compat = { path = "../../.." }
+
+[target.'cfg(linux)'.dependencies.compat]
+opencv = { version = "5.0.0", features = ["dnn"] }
