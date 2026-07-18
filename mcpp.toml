@@ -14,6 +14,7 @@ members = [
     "tests/examples/cjson",
     "tests/examples/core",
     "tests/examples/eigen",
+    "tests/examples/ffmpeg",
     "tests/examples/fmtlib.fmt",
     "tests/examples/gui-stack",
     "tests/examples/imgui",

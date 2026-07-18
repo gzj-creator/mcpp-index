@@ -1,0 +1,15 @@
+# FFmpeg test project. compat.ffmpeg compiles all of FFmpeg 8.1.2 from source
+# with mcpp itself (2281 TUs incl. 157 NASM .asm; no configure/make at build
+# time — the config snapshot ships as generated_files in the descriptor).
+# Linux-only for now: under cfg(linux) the dep is pulled and the test asserts
+# the full component surface; off-Linux the test compiles to a no-op main()
+# so `mcpp test --workspace` is a clean no-op on macOS/Windows.
+[package]
+name    = "ffmpeg-tests"
+version = "0.1.0"
+
+[indices]
+compat = { path = "../../.." }
+
+[target.'cfg(linux)'.dependencies.compat]
+ffmpeg = "8.1.2"

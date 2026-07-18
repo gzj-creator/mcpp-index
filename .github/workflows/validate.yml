@@ -11,12 +11,12 @@ on:
   workflow_dispatch:
 
 env:
-  # Bumped to 0.0.94: fixes feature-gated `sources` never being compiled under
-  # `mcpp test` (mcpp#218) — required by the tests/examples/spdlog-compiled
-  # member, which links against spdlog's feature-compiled src/*.cpp. Also
-  # carries standard = "c++fly" in the resolver grammar (0.0.91), so c++fly
+  # 0.0.96: carries the windows scanner symlink-escape crash fix (mcpp#230),
+  # so all platforms ride the same version again. Older floors of note:
+  # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218);
+  # 0.0.91 added standard = "c++fly" to the resolver grammar, so c++fly
   # descriptors get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.94"
+  MCPP_VERSION: "0.0.96"
 
 jobs:
   lint:
@@ -156,18 +156,23 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
+            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
+            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
             ext: zip
             mcpp: bin/mcpp.exe
             xlings: registry/bin/xlings.exe
+            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
+    env:
+      MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore mcpp registry cache
@@ -176,17 +181,17 @@ jobs:
           # Holds toolchains AND the built compat packages (data/xpkgs), so a
           # repeat `mcpp test` rebuilds little.
           path: ~/.mcpp/registry
-          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_VERSION }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
+          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
           restore-keys: |
-            mcpp-registry-${{ runner.os }}-${{ env.MCPP_VERSION }}-
+            mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-
       - name: Download mcpp
         shell: bash
         env:
-          MCPP_ARCHIVE: mcpp-${{ env.MCPP_VERSION }}-${{ matrix.suffix }}.${{ matrix.ext }}
-          MCPP_ROOT: mcpp-${{ env.MCPP_VERSION }}-${{ matrix.suffix }}
+          MCPP_ARCHIVE: mcpp-${{ env.MCPP_EFFECTIVE }}-${{ matrix.suffix }}.${{ matrix.ext }}
+          MCPP_ROOT: mcpp-${{ env.MCPP_EFFECTIVE }}-${{ matrix.suffix }}
         run: |
           curl -L -fsS -o "$MCPP_ARCHIVE" \
-            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/${MCPP_ARCHIVE}"
+            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_EFFECTIVE}/${MCPP_ARCHIVE}"
           case "$MCPP_ARCHIVE" in
             *.zip) powershell -NoProfile -Command "Expand-Archive -Force -Path '${MCPP_ARCHIVE}' -DestinationPath '.'" ;;
             *)     tar -xzf "$MCPP_ARCHIVE" ;;
@@ -203,6 +208,24 @@ jobs:
             echo "MCPP_VENDORED_XLINGS=$root/${{ matrix.xlings }}" >> "$GITHUB_ENV"
             echo "$root/bin" >> "$GITHUB_PATH"
           fi
+      # compat.ffmpeg carries NASM .asm sources. No host install needed:
+      # mcpp >= 0.0.95 resolves nasm itself (PATH → sandbox → auto
+      # `xlings install nasm`), lazily, only when the plan has .asm units —
+      # same self-bootstrap contract as the llvm toolchain. The sandbox copy
+      # lands in ~/.mcpp/registry, so the cache carries it across runs.
+      # The refresh below is needed because release archives vendor an index
+      # snapshot and the bootstrap is offline-first: 0.0.96 shipped with a
+      # nasm.lua deployed engines can't resolve — it "installs" empty
+      # (mcpp#232; fixed in xim-pkgindex#398 after the release was cut).
+      # One `mcpp index update` (native wrapper over `xlings update` with
+      # the sandbox env + transient-network retry) lets the bootstrap see
+      # the fixed descriptor. Drop once a mcpp release vendors a post-#398
+      # index snapshot.
+      - name: Refresh sandbox package index (nasm bootstrap, mcpp#232)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: '"$MCPP" index update'
+
       - name: mcpp test --workspace
         shell: bash
         env:
@@ -226,15 +249,17 @@ jobs:
   imgui-module:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      MCPP_EFFECTIVE: "0.0.96"   # keep in sync with env.MCPP_VERSION
     steps:
       - uses: actions/checkout@v4
       - name: Restore mcpp registry cache
         uses: actions/cache@v4
         with:
           path: ~/.mcpp/registry
-          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_VERSION }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
+          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
           restore-keys: |
-            mcpp-registry-${{ runner.os }}-${{ env.MCPP_VERSION }}-
+            mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-
       - name: Download mcpp
         run: |
           curl -L -fsS -o mcpp.tar.gz \
