@@ -6,17 +6,23 @@ on:
   push:
     branches: [main]
   schedule:
-    # nightly full regression — exercises every smoke suite regardless of diff
+    # nightly full regression — exercises every workspace member regardless of diff
     - cron: "0 6 * * *"
   workflow_dispatch:
 
 env:
-  # 0.0.96: carries the windows scanner symlink-escape crash fix (mcpp#230),
-  # so all platforms ride the same version again. Older floors of note:
-  # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218);
-  # 0.0.91 added standard = "c++fly" to the resolver grammar, so c++fly
-  # descriptors get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.96"
+  # 0.0.97: default-namespace index redirect (`[indices] default = { path }`),
+  # which turned the public module packages (imgui/ffmpeg/opencv/tinyhttps)
+  # into ordinary workspace members and retired the per-package reseeding
+  # smoke shells + their dedicated jobs; also carries the synchronous nasm
+  # bootstrap (mcpp#232 — the `mcpp index update` pre-step is gone), obj-path
+  # disambiguation (#233), spacey-defines quoting (#234), and purview-include
+  # depfile tracking (#235). Older floors of note: 0.0.96 fixed the windows
+  # scanner symlink-escape crash (mcpp#230); 0.0.94 fixed feature-gated
+  # `sources` under `mcpp test` (mcpp#218); 0.0.91 added standard = "c++fly"
+  # to the resolver grammar, so c++fly descriptors get the lint WARN below,
+  # not a hard grammar-parse rejection.
+  MCPP_VERSION: "0.0.97"
 
 jobs:
   lint:
@@ -156,21 +162,21 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
             ext: zip
             mcpp: bin/mcpp.exe
             xlings: registry/bin/xlings.exe
-            mcpp_version: "0.0.96"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
     env:
       MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
@@ -212,23 +218,12 @@ jobs:
             echo "MCPP_VENDORED_XLINGS=$root/${{ matrix.xlings }}" >> "$GITHUB_ENV"
             echo "$root/bin" >> "$GITHUB_PATH"
           fi
-      # compat.ffmpeg carries NASM .asm sources. No host install needed:
-      # mcpp >= 0.0.95 resolves nasm itself (PATH → sandbox → auto
-      # `xlings install nasm`), lazily, only when the plan has .asm units —
-      # same self-bootstrap contract as the llvm toolchain. The sandbox copy
-      # lands in ~/.mcpp/registry, so the cache carries it across runs.
-      # The refresh below is needed because release archives vendor an index
-      # snapshot and the bootstrap is offline-first: 0.0.96 shipped with a
-      # nasm.lua deployed engines can't resolve — it "installs" empty
-      # (mcpp#232; fixed in xim-pkgindex#398 after the release was cut).
-      # One `mcpp index update` (native wrapper over `xlings update` with
-      # the sandbox env + transient-network retry) lets the bootstrap see
-      # the fixed descriptor. Drop once a mcpp release vendors a post-#398
-      # index snapshot.
-      - name: Refresh sandbox package index (nasm bootstrap, mcpp#232)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: '"$MCPP" index update'
+      # compat.ffmpeg / compat.opencv5 carry NASM .asm sources. No host
+      # install and no index-refresh pre-step needed: mcpp >= 0.0.97
+      # resolves nasm itself through the same synchronous gate as the
+      # toolchain (index refresh + install + payload check BEFORE the build
+      # plans, mcpp#232). The sandbox copy lands in ~/.mcpp/registry, so
+      # the cache carries it across runs.
 
       # ── Selective member testing ──────────────────────────────────────
       # `mcpp test --workspace` builds every member (opencv, ffmpeg, …) and
@@ -311,120 +306,4 @@ jobs:
             done
             exit $rc
           fi
-      - name: tinyhttps module package smoke
-        shell: bash
-        env:
-          MCPP_INDEX_MIRROR: GLOBAL
-        run: bash tests/smoke_tinyhttps_module.sh
 
-  # ── Exception: the public `imgui` C++23-module package (namespace "") ──
-  # Not yet a workspace member: its package has an empty namespace (the builtin
-  # default index), which a workspace member can't point at a local path the way
-  # namespaced compat.*/nlohmann packages can. Until mcpp can map the default
-  # namespace to a local index, this one keeps a thin driver that reseeds the
-  # default index from the repo. Tracked in the rearchitecture design doc.
-  imgui-module:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      MCPP_EFFECTIVE: "0.0.96"   # keep in sync with env.MCPP_VERSION
-    steps:
-      - uses: actions/checkout@v4
-      - name: Restore mcpp registry cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.mcpp/registry
-          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
-          restore-keys: |
-            mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-
-      - name: Download mcpp
-        run: |
-          curl -L -fsS -o mcpp.tar.gz \
-            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/mcpp-${MCPP_VERSION}-linux-x86_64.tar.gz"
-          tar -xzf mcpp.tar.gz
-          root="$PWD/mcpp-${MCPP_VERSION}-linux-x86_64"
-          mkdir -p "$HOME/.mcpp/registry"
-          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
-          echo "MCPP=$root/bin/mcpp" >> "$GITHUB_ENV"
-          echo "MCPP_VENDORED_XLINGS=$root/registry/bin/xlings" >> "$GITHUB_ENV"
-          echo "$root/bin" >> "$GITHUB_PATH"
-      - name: imgui module package smoke
-        env:
-          MCPP_INDEX_MIRROR: GLOBAL
-        run: |
-          "$MCPP" --version
-          timeout 1800 bash tests/smoke_imgui_module.sh
-
-  # ── Exception: the public `ffmpeg` C++23-module package (namespace "") ──
-  # Same default-namespace limitation as imgui-module above — validated via a
-  # reseeding smoke driver instead of a workspace member. Linux-only: its
-  # compat.ffmpeg dependency ships a linux-x86_64 configure snapshot (macOS is
-  # blocked on mcpp#229 dependency cfg-conditional sources).
-  ffmpeg-module:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      MCPP_EFFECTIVE: "0.0.96"   # keep in sync with env.MCPP_VERSION
-    steps:
-      - uses: actions/checkout@v4
-      - name: Restore mcpp registry cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.mcpp/registry
-          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
-          restore-keys: |
-            mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-
-      - name: Download mcpp
-        run: |
-          curl -L -fsS -o mcpp.tar.gz \
-            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/mcpp-${MCPP_VERSION}-linux-x86_64.tar.gz"
-          tar -xzf mcpp.tar.gz
-          root="$PWD/mcpp-${MCPP_VERSION}-linux-x86_64"
-          mkdir -p "$HOME/.mcpp/registry"
-          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
-          echo "MCPP=$root/bin/mcpp" >> "$GITHUB_ENV"
-          echo "MCPP_VENDORED_XLINGS=$root/registry/bin/xlings" >> "$GITHUB_ENV"
-          echo "$root/bin" >> "$GITHUB_PATH"
-      - name: ffmpeg module package smoke
-        env:
-          MCPP_INDEX_MIRROR: GLOBAL
-        run: |
-          "$MCPP" --version
-          timeout 2700 bash tests/smoke_ffmpeg_module.sh
-
-  # ── Exception: the public `opencv` C++23-module package (namespace "") ──
-  # Same default-namespace limitation as imgui-module above — validated via a
-  # reseeding smoke driver instead of a workspace member. Linux-only: its
-  # compat.opencv5 dependency ships a linux-x86_64 config snapshot (macOS is
-  # blocked on mcpp#229 dependency cfg-conditional sources).
-  opencv-module:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      MCPP_EFFECTIVE: "0.0.96"   # keep in sync with env.MCPP_VERSION
-    steps:
-      - uses: actions/checkout@v4
-      - name: Restore mcpp registry cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.mcpp/registry
-          key: mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-${{ hashFiles('pkgs/**/*.lua', 'tests/**', '.github/workflows/validate.yml') }}
-          restore-keys: |
-            mcpp-registry-${{ runner.os }}-${{ env.MCPP_EFFECTIVE }}-
-      - name: Download mcpp
-        run: |
-          curl -L -fsS -o mcpp.tar.gz \
-            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/mcpp-${MCPP_VERSION}-linux-x86_64.tar.gz"
-          tar -xzf mcpp.tar.gz
-          root="$PWD/mcpp-${MCPP_VERSION}-linux-x86_64"
-          mkdir -p "$HOME/.mcpp/registry"
-          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
-          echo "MCPP=$root/bin/mcpp" >> "$GITHUB_ENV"
-          echo "MCPP_VENDORED_XLINGS=$root/registry/bin/xlings" >> "$GITHUB_ENV"
-          echo "$root/bin" >> "$GITHUB_PATH"
-      - name: opencv module package smoke
-        env:
-          MCPP_INDEX_MIRROR: GLOBAL
-        run: |
-          "$MCPP" --version
-          timeout 2700 bash tests/smoke_opencv_module.sh
