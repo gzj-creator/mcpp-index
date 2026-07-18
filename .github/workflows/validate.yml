@@ -11,18 +11,26 @@ on:
   workflow_dispatch:
 
 env:
-  # 0.0.97: default-namespace index redirect (`[indices] default = { path }`),
-  # which turned the public module packages (imgui/ffmpeg/opencv/tinyhttps)
-  # into ordinary workspace members and retired the per-package reseeding
-  # smoke shells + their dedicated jobs; also carries the synchronous nasm
-  # bootstrap (mcpp#232 — the `mcpp index update` pre-step is gone), obj-path
-  # disambiguation (#233), spacey-defines quoting (#234), and purview-include
-  # depfile tracking (#235). Older floors of note: 0.0.96 fixed the windows
-  # scanner symlink-escape crash (mcpp#230); 0.0.94 fixed feature-gated
-  # `sources` under `mcpp test` (mcpp#218); 0.0.91 added standard = "c++fly"
-  # to the resolver grammar, so c++fly descriptors get the lint WARN below,
-  # not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.97"
+  # 0.0.98: closes the obj-path disambiguation follow-ups that gated the
+  # source-build compat.opencv unification — #240 (link inputs now follow
+  # the disambiguated object names, so a dependency + consumer sharing a
+  # source basename like `src/main.cpp` no longer 'obj/main.o missing') and
+  # #239 (absolute/`..` dep-generated source paths sanitized component-wise
+  # so objects stay under obj/). Also: `MCPP_DEP_<NAME>_DIR` build.mcpp
+  # contract (#241), consumer-side `default-features = false` (#242), and a
+  # loud unknown-mcpp-key warning with did-you-mean (#237, replaces the
+  # silent-ignore at build time). Carried from 0.0.97: default-namespace
+  # index redirect (`[indices] default = { path }`), which turned the public
+  # module packages (imgui/ffmpeg/opencv/tinyhttps) into ordinary workspace
+  # members and retired the per-package reseeding smoke shells + their
+  # dedicated jobs; synchronous nasm bootstrap (mcpp#232 — the `mcpp index
+  # update` pre-step is gone), obj-path disambiguation (#233), spacey-defines
+  # quoting (#234), purview-include depfile tracking (#235). Older floors of
+  # note: 0.0.96 fixed the windows scanner symlink-escape crash (mcpp#230);
+  # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218); 0.0.91
+  # added standard = "c++fly" to the resolver grammar, so c++fly descriptors
+  # get the lint WARN below, not a hard grammar-parse rejection.
+  MCPP_VERSION: "0.0.98"
 
 jobs:
   lint:
@@ -145,10 +153,22 @@ jobs:
   # windows-only), so one command covers the matrix with no shell driver.
   # The ~/.mcpp/registry cache carries the built compat packages (xpkgs) across
   # runs, so repeat builds are fast.
+  #
+  # timeout-minutes is sized for the COLD build, not the cached path. compat.opencv
+  # is now a from-source OpenCV 5 build, and each feature variant re-keys the
+  # store into a full recompile, so a full run (forced whenever this workflow file
+  # changes — e.g. a version bump) serially builds several OpenCV variants on one
+  # runner: compat.opencv base + `unifont` + `dnn` feature members, plus the
+  # transition-window compat.opencv5 pulled by the opencv-module member (opencv-m
+  # still deps compat.opencv5 until its v0.0.3). That transition double-build goes
+  # away once opencv-m switches to compat.opencv and compat.opencv5 is retired;
+  # steady state is base+unifont+dnn, and the registry cache (restore-keys prefix
+  # below) amortizes even those across subsequent runs. 150 covers the one-time
+  # cold full build with headroom; it is a ceiling, not a target.
   workspace:
     name: workspace (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -162,21 +182,21 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
             ext: zip
             mcpp: bin/mcpp.exe
             xlings: registry/bin/xlings.exe
-            mcpp_version: "0.0.97"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
     env:
       MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
