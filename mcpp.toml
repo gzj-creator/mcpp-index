@@ -1,7 +1,7 @@
 # mcpp-index is simultaneously the package index (pkgs/) AND a mcpp workspace that
 # tests it: a virtual workspace whose members are per-library TEST projects under
-# tests/examples/ — each depends on this repo's own compat.<lib> via a local
-# [indices] path and asserts behavior in tests/*.cpp. The whole suite runs as a
+# tests/examples/ — each depends on this repo's own packages via a per-member
+# local [indices] redirect and asserts behavior in tests/*.cpp. The whole suite runs as a
 # single shell-free command, `mcpp test --workspace` (or `mcpp test -p <lib>`).
 # "Eat our own dog food." See
 # .agents/docs/2026-06-29-mcpp-native-workspace-ci-design.md and
@@ -15,15 +15,27 @@ members = [
     "tests/examples/core",
     "tests/examples/eigen",
     "tests/examples/ffmpeg",
+    "tests/examples/ffmpeg-module",
     "tests/examples/fmtlib.fmt",
     "tests/examples/gui-stack",
     "tests/examples/imgui",
+    "tests/examples/imgui-module",
     "tests/examples/imgui-window",
     "tests/examples/marzer.tomlplusplus",
     "tests/examples/nlohmann.json",
     "tests/examples/openblas",
     "tests/examples/opencv",
     "tests/examples/opencv5",
+    "tests/examples/opencv-module",
     "tests/examples/spdlog",
     "tests/examples/spdlog-compiled",
+    "tests/examples/tinyhttps",
 ]
+
+
+# NOTE: each member declares exactly ONE `[indices] <ns> = { path = "../../.." }`
+# entry for the namespace it consumes (module packages use `default`, the
+# builtin mcpplibs namespace — mcpp >= 0.0.97). Root-level centralization of
+# these redirects (mcpp #224) is deliberately NOT used yet: xlings fails
+# silently when a project has more than one project-scoped index repo
+# (mcpp-community/mcpp#238); revisit once fixed.
