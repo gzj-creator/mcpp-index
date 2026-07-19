@@ -28,9 +28,19 @@ jobs:
           echo "total .asm (NASM): $(grep -oE '[^ ]+\.asm\b' make-n.log | sort -u | wc -l)"
           echo "aarch64 dir sources: $(grep -oE '[^ ]+/aarch64/[^ ]+\.[cS]\b' make-n.log | sort -u | wc -l)"
           echo "=== sample aarch64 .S ==="; grep -oE '[^ ]+/aarch64/[^ ]+\.S\b' make-n.log | sort -u | head -8
-          mkdir -p ../snapshot
+          # COMPLETE snapshot (everything gen_descriptor.py needs): config
+          # headers + all *_list.c generated files + sources.txt (make -n ground
+          # truth, src/-prefixed, deduped) mirroring tools/compat-ffmpeg layout.
+          mkdir -p ../snapshot/libavutil ../snapshot/libavcodec ../snapshot/libavformat ../snapshot/libavfilter ../snapshot/libavdevice
           cp config.h config_components.h configure.log make-n.log ../snapshot/ 2>/dev/null || true
-          find . \( -name avconfig.h -o -name ffversion.h \) -exec cp {} ../snapshot/ \; 2>/dev/null || true
+          cp libavutil/avconfig.h libavutil/ffversion.h ../snapshot/libavutil/ 2>/dev/null || true
+          cp libavcodec/codec_list.c libavcodec/parser_list.c libavcodec/bsf_list.c ../snapshot/libavcodec/ 2>/dev/null || true
+          cp libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c ../snapshot/libavformat/ 2>/dev/null || true
+          cp libavfilter/filter_list.c ../snapshot/libavfilter/ 2>/dev/null || true
+          cp libavdevice/indev_list.c libavdevice/outdev_list.c ../snapshot/libavdevice/ 2>/dev/null || true
+          # sources.txt: extract compiled .c/.S/.asm from make -n, src/-prefixed, deduped
+          grep -oE '\S+\.(c|S|asm)\b' make-n.log | sed 's|^\.\./ffmpeg-8.1.2/|src/|; s|^|src/|; s|src/src/|src/|' | sort -u > ../snapshot/sources.txt || true
+          echo "captured $(ls -R ../snapshot | grep -c '\.' ) files; sources.txt lines: $(wc -l < ../snapshot/sources.txt)"
       - uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-macosx-arm64-snapshot
