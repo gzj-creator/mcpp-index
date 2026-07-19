@@ -43,6 +43,7 @@ jobs:
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
             -DBUILD_LIST=core,imgproc,imgcodecs,highgui \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
+            -DENABLE_LIBJPEG_TURBO_SIMD=OFF \
             -DWITH_WIN32UI=OFF -DWITH_DSHOW=OFF -DWITH_MSMF=OFF -DWITH_MSMF_DXVA=OFF \
             -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF \
             -DWITH_OPENEXR=OFF -DWITH_AVIF=OFF -DWITH_JPEGXL=OFF -DWITH_IMGCODEC_GIF=OFF \
@@ -78,7 +79,7 @@ jobs:
             # real LNK deps, added back per-OS afterwards).
             sed -e 's/^        linux = {/        windows = {/' \
                 -e 's/name        = "compat.opencv"/name        = "compat.opencvwin"/' \
-                -e 's/ldflags = { "-lpthread", "-ldl" }/ldflags = { }/' \
+                -e 's/ldflags = { "-lpthread", "-ldl" }/ldflags = { "-lole32" }/' \
                 compat.opencv.wingen.lua > compat.opencvwin.lua || true
             echo "=== descriptor head ==="; head -50 compat.opencvwin.lua || true
           fi
