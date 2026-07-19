@@ -26,8 +26,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -230,19 +232,43 @@ int main() {
     blob2hdr(wrap / "modules/imgproc/fonts/Rubik-Italic.ttf.gz", out / "builtin_font_italic.h", "OcvBuiltinFontItalic");
 
     // 1b. unifont feature: hex-embed the CJK font pulled in by the
-    //     compat.opencv-unifont dependency. Its payload is a raw .gz the
-    //     installer parks byte-preserved in the store's shared
-    //     data/runtimedir/ (no MCPP_DEP_<NAME>_DIR contract var yet), so
-    //     resolve it relative to this package's store location, with a
-    //     verdir sweep as fallback.
+    //     compat.opencv-unifont dependency. Its raw .gz payload is parked by
+    //     the installer in a shared runtimedir whose location relative to any
+    //     one package shifted across xlings store layouts (0.4.62 -> 0.4.67,
+    //     mcpp 0.0.99), which is why a fixed `<data>/xpkgs/<pkg>/<ver> ->
+    //     <data>/runtimedir` hop broke. Anchor instead on the authoritative
+    //     per-dep dir contract (mcpp#241: MCPP_DEP_<NAME>_DIR, emitted under
+    //     both the canonical name and the namespace-stripped short name) and
+    //     walk up probing runtimedir/ at every level; fall back to this
+    //     package's own store location + a bounded search so older mcpp
+    //     (pre-#241) and future layout shifts still resolve.
     if (std::getenv("MCPP_FEATURE_UNIFONT")) {
         const char* fname = "WenQuanYiMicroHei.ttf.gz";
         fs::path font;
-        // <data>/xpkgs/<pkg>/<ver> -> <data>/runtimedir/<fname>
-        fs::path rt = man.parent_path().parent_path().parent_path() / "runtimedir" / fname;
-        if (fs::exists(rt)) font = rt;
+        std::error_code ec;
+        auto probe = [&](const fs::path& base) -> fs::path {
+            if (base.empty()) return {};
+            for (const fs::path& c : { base / fname,
+                                       base / "runtimedir" / fname,
+                                       base / "data" / "runtimedir" / fname })
+                if (fs::exists(c)) return c;
+            return {};
+        };
+        std::vector<fs::path> anchors;
+        if (const char* d = std::getenv("MCPP_DEP_COMPAT_OPENCV_UNIFONT_DIR")) anchors.emplace_back(d);
+        if (const char* d = std::getenv("MCPP_DEP_OPENCV_UNIFONT_DIR"))        anchors.emplace_back(d);
+        anchors.push_back(man);
+        if (const char* d = std::getenv("MCPP_OUT_DIR")) anchors.emplace_back(d);
+        // walk up from each anchor, probing runtimedir/ at every level
+        for (const auto& a : anchors) {
+            for (fs::path p = a; !p.empty(); p = p.parent_path()) {
+                if (auto hit = probe(p); !hit.empty()) { font = hit; break; }
+                if (p == p.root_path()) break;
+            }
+            if (!font.empty()) break;
+        }
+        // fallback: sweep any opencv-unifont verdir near this package's store dir
         if (font.empty()) {
-            std::error_code ec;
             for (auto& e : fs::directory_iterator(man.parent_path().parent_path(), ec)) {
                 if (e.path().filename().string().find("opencv-unifont") == std::string::npos) continue;
                 for (auto& v : fs::recursive_directory_iterator(e.path(), ec))
@@ -250,9 +276,34 @@ int main() {
                 if (!font.empty()) break;
             }
         }
+        // last resort: bounded recursive search from the nearest store root
         if (font.empty()) {
-            std::fprintf(stderr, "compat.opencv build.mcpp: unifont feature on but %s not found near %s\n",
-                         fname, man.string().c_str());
+            for (const auto& a : anchors) {
+                fs::path root = a;
+                for (int up = 0; up < 8 && root.has_parent_path(); ++up) {
+                    if (fs::exists(root / "runtimedir") || fs::exists(root / "xpkgs")
+                        || root.filename() == "data") break;
+                    root = root.parent_path();
+                }
+                long budget = 400000;
+                for (auto it = fs::recursive_directory_iterator(root,
+                         fs::directory_options::skip_permission_denied, ec);
+                     it != fs::recursive_directory_iterator() && budget-- > 0; it.increment(ec)) {
+                    if (ec) { ec.clear(); continue; }
+                    if (it->path().filename() == fname) { font = it->path(); break; }
+                }
+                if (!font.empty()) break;
+            }
+        }
+        if (font.empty()) {
+            const char* e1 = std::getenv("MCPP_DEP_COMPAT_OPENCV_UNIFONT_DIR");
+            const char* e2 = std::getenv("MCPP_DEP_OPENCV_UNIFONT_DIR");
+            const char* e3 = std::getenv("MCPP_OUT_DIR");
+            std::fprintf(stderr, "compat.opencv build.mcpp: unifont feature on but %s not found.\n"
+                         "  MCPP_MANIFEST_DIR=%s\n  MCPP_DEP_COMPAT_OPENCV_UNIFONT_DIR=%s\n"
+                         "  MCPP_DEP_OPENCV_UNIFONT_DIR=%s\n  MCPP_OUT_DIR=%s\n",
+                         fname, man.string().c_str(),
+                         e1 ? e1 : "(unset)", e2 ? e2 : "(unset)", e3 ? e3 : "(unset)");
             return 1;
         }
         blob2hdr(font, out / "builtin_font_uni.h", "OcvBuiltinFontUni");
