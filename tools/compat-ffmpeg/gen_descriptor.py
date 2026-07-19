@@ -15,6 +15,13 @@ list, so consumers build FFmpeg from source with zero configure/make at any
 point — the compat package is the single source of truth for the recipe.
 
 Usage: gen_descriptor.py <builddir> <version> <sha256> <out.lua>
+
+NOTE (compat-gen): this generator emits the raw per-OS descriptor. Its
+output should then be post-processed by tools/compat-gen/restructure.py
+(cross-OS common/delta source split; per-OS sections are additive overlays)
+and gated with tools/compat-gen/verify.py — see tools/compat-gen/README.md.
+The generator itself is deliberately left emitting the raw form; the
+restructure step is a separate, verifiable pass.
 """
 
 import os
