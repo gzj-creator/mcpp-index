@@ -1,0 +1,35 @@
+# TEMP spike: capture the macOS-arm64 FFmpeg config snapshot (config.h + make -n
+# source list) on a macos-15 runner, matching the linux hermetic profile. This is
+# the raw material for the compat.ffmpeg `macosx` block. workflow_dispatch only.
+name: snapshot-macos-ffmpeg
+on:
+  workflow_dispatch:
+jobs:
+  capture:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Fetch FFmpeg 8.1.2
+        run: |
+          curl -L -fsS -o ffmpeg.tar.gz "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.gz"
+          tar -xzf ffmpeg.tar.gz
+      - name: configure (hermetic profile, clang) + make -n
+        run: |
+          mkdir build && cd build
+          ../ffmpeg-8.1.2/configure --cc=clang --disable-autodetect --disable-programs --disable-doc >configure.log 2>&1 || { echo "CONFIGURE FAILED"; tail -60 configure.log; exit 1; }
+          echo "=== configure OK. key config.h facts ==="
+          grep -E '#define (OS_NAME|ARCH_AARCH64|ARCH_X86_64|EXTERN_PREFIX|SLIBSUF|HAVE_NEON |HAVE_VFP |HAVE_PTHREADS |HAVE_W32THREADS |HAVE_MMX |HAVE_ALIGNED_MALLOC |HAVE_MEMALIGN |HAVE_MACH_ABSOLUTE_TIME |HAVE_UNISTD_H |HAVE_WINDOWS_H )' config.h
+          make -n >make-n.log 2>/dev/null || true
+          echo "=== source list (make -n ground truth) ==="
+          echo "total .c: $(grep -oE '[^ ]+\.c\b' make-n.log | sort -u | wc -l)"
+          echo "total .S (GAS asm): $(grep -oE '[^ ]+\.S\b' make-n.log | sort -u | wc -l)"
+          echo "total .asm (NASM): $(grep -oE '[^ ]+\.asm\b' make-n.log | sort -u | wc -l)"
+          echo "aarch64 dir sources: $(grep -oE '[^ ]+/aarch64/[^ ]+\.[cS]\b' make-n.log | sort -u | wc -l)"
+          echo "=== sample aarch64 .S ==="; grep -oE '[^ ]+/aarch64/[^ ]+\.S\b' make-n.log | sort -u | head -8
+          mkdir -p ../snapshot
+          cp config.h config_components.h configure.log make-n.log ../snapshot/ 2>/dev/null || true
+          find . \( -name avconfig.h -o -name ffversion.h \) -exec cp {} ../snapshot/ \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-macosx-arm64-snapshot
+          path: snapshot/
