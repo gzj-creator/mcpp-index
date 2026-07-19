@@ -23,6 +23,14 @@ jobs:
           echo "b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095  opencv.tar.gz" | shasum -a 256 -c -
           tar -xzf opencv.tar.gz
           echo "OPENCV_SRC=$PWD/opencv-5.0.0" >> "$GITHUB_ENV"
+          # Headless highgui on macOS to MATCH linux (same API surface, no GUI backend):
+          # mcpp cannot compile window_cocoa.mm (.mm/Objective-C++ unsupported), and
+          # OpenCV 5 has no WITH_COCOA switch — HAVE_COCOA is set unconditionally on
+          # APPLE+clang in cmake/OpenCVFindLibsGUI.cmake. Neutralize that one line so the
+          # highgui elseif-chain falls through to the headless path (like linux w/o GTK/Qt).
+          sed -i.bak 's/set(HAVE_COCOA YES)/message(STATUS "mcpp: HAVE_COCOA disabled -> headless highgui (matches linux)")/' \
+            "$PWD/opencv-5.0.0/cmake/OpenCVFindLibsGUI.cmake"
+          grep -n 'HAVE_COCOA\|mcpp: HAVE_COCOA' "$PWD/opencv-5.0.0/cmake/OpenCVFindLibsGUI.cmake" || true
       - name: build static ffmpeg prefix (videoio backend discovery)
         run: |
           set -eux
