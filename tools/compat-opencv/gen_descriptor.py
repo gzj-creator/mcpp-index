@@ -45,43 +45,80 @@ FFMPEG_DEP_VERSION = os.environ.get("FFMPEG_DEP_VERSION", "8.1.2")
 
 # ── parse `ninja -t commands` ───────────────────────────────────────────
 compiles = []
-for line in (BLD / "ninja-cmds.log").read_text().splitlines():
-    line = line.strip()
-    if not line:
+DRIVE_ABS = re.compile(r"^[A-Za-z]:[\\/]")
+for raw in (BLD / "ninja-cmds.log").read_text().splitlines():
+    raw = raw.strip()
+    if not raw:
         continue
+    # Windows (clang-cl / win64 nasm) lines carry backslash paths that shlex's
+    # POSIX mode would treat as escapes; normalise to forward slashes first (no
+    # meaningful backslash-escapes appear in these commands). Linux/macOS lines
+    # have no backslashes so this is a no-op for them.
+    is_win = ("clang-cl" in raw.lower()) or bool(re.search(r"[A-Za-z]:\\", raw))
+    line = raw.replace("\\", "/") if is_win else raw
     try:
         toks = shlex.split(line)
     except ValueError:
         continue
     if not toks:
         continue
-    tool = Path(toks[0]).name
-    if tool not in ("g++", "gcc", "cc", "c++", "clang", "clang++", "nasm"):
+    tool_raw = Path(toks[0].strip('"')).name.lower()
+    if tool_raw.endswith(".exe"):
+        tool_raw = tool_raw[:-4]
+    if tool_raw == "clang-cl":
+        tool = "g++"          # clang-cl builds .c and .cpp; source extension decides downstream
+    elif tool_raw == "nasm":
+        tool = "nasm"
+    elif tool_raw in ("g++", "gcc", "cc", "c++", "clang", "clang++"):
+        tool = "g++" if tool_raw in ("g++", "c++", "clang++") else "gcc"
+    else:
         continue
-    tool = "nasm" if tool == "nasm" else ("g++" if tool in ("g++", "c++", "clang++") else "gcc")
     src = None; defs = set(); mflags = []; incs = []; std = None
     skip = False
     for i in range(1, len(toks)):
         t = toks[i]
         if skip: skip = False; continue
-        if t in ("-o", "-MF", "-MT", "-MQ"): skip = True; continue
+        # gnu depfile/output flags that consume the next token (never on clang-cl,
+        # where -MT is the *runtime* selector, not a depfile target)
+        if not is_win and t in ("-o", "-MF", "-MT", "-MQ"): skip = True; continue
+        if tool == "nasm" and t == "-o": skip = True; continue
         if t == "-MD":
             if tool == "nasm": skip = True
             continue
         if t == "-c": continue
+        if is_win:
+            if t.startswith(("/Fo", "/Fd", "/Fi", "/Fa", "/Fp")): continue   # output artifacts
+            if t.startswith("-clang:"): continue                             # depfile passthrough (-clang:-MD/-MF/-MT)
+            if t in ("/D", "/I", "/U"):                                       # msvc space-separated define/include
+                if i + 1 < len(toks):
+                    nx = toks[i + 1].strip('"')
+                    if t == "/D": defs.add("-D" + nx)
+                    elif t == "/I": incs.append(nx)
+                    skip = True
+                continue
+            if t.startswith("/D"): defs.add("-D" + t[2:]); continue
+            if t.startswith("/I"): incs.append(t[2:].strip('"')); continue
+            if t.startswith("-imsvc"):                                        # clang-cl system include
+                d = t[len("-imsvc"):].strip('"')
+                if d: incs.append(d)
+                elif i + 1 < len(toks): incs.append(toks[i + 1].strip('"')); skip = True
+                continue
+            if t.startswith(("/std:", "-std:")): std = t; continue
+            # msvc codegen/warning/runtime flags mcpp supplies itself — drop
+            if t.startswith("/") or t in ("-TP", "-TC") or t.startswith(("-W", "-Q")): continue
         if t == "-isystem":
-            # capture the dir (next token) as an ordinary include dir
             if i + 1 < len(toks): incs.append(toks[i + 1].strip('"'))
             skip = True; continue
         if t.startswith("-std="): std = t; continue
         if t.startswith("-D"): defs.add(t); continue
         if t.startswith("-I"): incs.append(t[2:].strip('"')); continue
         if t.startswith("-m") or t in ("-O3", "-O2"): mflags.append(t); continue
-        if re.search(r"\.(c|cc|cpp|cxx|asm|S)$", t) and not t.startswith("-"):
+        if re.search(r"\.(c|cc|cpp|cxx|asm|S)$", t, re.I) and not t.startswith("-"):
             src = t
     if src is None:
         continue
-    src_abs = src if src.startswith("/") else str(BLD / src)
+    is_abs = src.startswith("/") or bool(DRIVE_ABS.match(src))
+    src_abs = src if is_abs else str(BLD / src)
     compiles.append((tool, src_abs, frozenset(defs), tuple(mflags), incs, std))
 assert compiles, "no compile commands parsed"
 print(f"parsed {len(compiles)} compiles")
