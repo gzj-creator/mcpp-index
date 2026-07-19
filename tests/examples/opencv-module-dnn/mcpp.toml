@@ -1,0 +1,15 @@
+# Public `opencv` module package `dnn` FEATURE test: `opencv = { features =
+# ["dnn"] }` forwards compat.opencv/dnn (mcpp#243) AND compiles opencv-m's
+# opencv.dnn interface, so `import opencv.dnn;` is available. Reuses the
+# compat.opencv+dnn store artifact built by the opencv-dnn member (same feature
+# set — no extra heavy build). Linux-only (compat.opencv linux snapshot);
+# off-Linux the test compiles to a no-op main().
+[package]
+name    = "opencv-module-dnn-tests"
+version = "0.1.0"
+
+[indices]
+default = { path = "../../.." }
+
+[target.'cfg(linux)'.dependencies]
+opencv = { version = "0.0.4", features = ["dnn"] }

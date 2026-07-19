@@ -17,4 +17,4 @@ version = "0.1.0"
 default = { path = "../../.." }
 
 [target.'cfg(linux)'.dependencies]
-opencv = "0.0.3"
+opencv = "0.0.4"
