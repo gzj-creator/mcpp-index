@@ -115,7 +115,7 @@ for raw in (BLD / "ninja-cmds.log").read_text().splitlines():
                 if d: incs.append(d)
                 elif i + 1 < len(toks): incs.append(toks[i + 1].strip('"')); skip = True
                 continue
-            if t.startswith(("/std:", "-std:")): std = t; continue
+            if t.startswith(("/std:", "-std:")): std = "-std=" + t.split(":", 1)[1]; continue  # clang-cl -std:c++17 -> canonical
             # msvc codegen/warning/runtime flags mcpp supplies itself — drop
             if t.startswith("/") or t in ("-TP", "-TC") or t.startswith(("-W", "-Q")): continue
         if t == "-isystem":
