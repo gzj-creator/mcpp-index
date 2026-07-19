@@ -1,9 +1,8 @@
-# TEMP R1 spike v3: windows ffmpeg configure (MSVC) + capture the source list
-# (install make) → the windows snapshot, and report the .c/.asm counts.
+# TEMP R1 spike v4: windows ffmpeg config + source list via MSYS2 (has make) +
+# msvc-dev-cmd (cl.exe env). configure already proven; this captures the sources.
 name: snapshot-windows-ffmpeg
 on:
-  push:
-    branches: ['spike/ffmpeg-windows']
+  push: { branches: ['spike/ffmpeg-windows'] }
   workflow_dispatch:
 jobs:
   capture:
@@ -11,24 +10,25 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Install make
-        shell: pwsh
-        run: choco install make -y --no-progress
+      - uses: msys2/setup-msys2@v2
+        with: { msystem: UCRT64, install: 'make diffutils tar', path-type: inherit }
       - name: configure (msvc) + make -n + capture
-        shell: bash
+        shell: msys2 {0}
         run: |
+          set +o pipefail
+          echo "cl.exe: $(which cl.exe 2>/dev/null || echo MISSING)  make: $(which make)"
           curl -L -fsS -o ffmpeg.tar.gz "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.gz"; tar -xzf ffmpeg.tar.gz
           mkdir build && cd build
-          ../ffmpeg-8.1.2/configure --toolchain=msvc --disable-autodetect --disable-programs --disable-doc >cfg.log 2>&1 && echo "CONFIGURE OK" || { tail -30 cfg.log; exit 1; }
-          make -n >make-n.log 2>/dev/null || true
-          echo "make-n lines: $(wc -l < make-n.log)"
-          echo ".c=$(grep -oE '[^ ]+\.c\b' make-n.log|sort -u|wc -l) .S=$(grep -oE '[^ ]+\.S\b' make-n.log|sort -u|wc -l) .asm=$(grep -oE '[^ ]+\.asm\b' make-n.log|sort -u|wc -l)"
-          echo "=== sample compile lines ==="; grep -m3 -E 'cl |clang|\.c ' make-n.log | head -3
+          ../ffmpeg-8.1.2/configure --toolchain=msvc --disable-autodetect --disable-programs --disable-doc >cfg.log 2>&1 && echo "CONFIGURE OK" || { echo FAIL; tail -30 cfg.log; exit 1; }
+          make -n >make-n.log 2>make-n.err || true
+          echo "make-n lines: $(wc -l < make-n.log)   (stderr: $(head -1 make-n.err))"
+          echo ".c=$(grep -oE '[^ ]+\.c\b' make-n.log|sort -u|wc -l) .S=$(grep -oE '[^ ]+\.S\b' make-n.log|sort -u|wc -l) .asm=$(grep -oE '[^ ]+\.(asm|obj)\b' make-n.log|sort -u|wc -l)"
+          echo "=== windows config.h facts ==="; grep -E '#define (OS_NAME|ARCH_X86_64|HAVE_W32THREADS|HAVE_MMX_EXTERNAL|HAVE_INLINE_ASM)' config.h
           mkdir -p ../snap/libavutil ../snap/libavcodec ../snap/libavformat ../snap/libavfilter ../snap/libavdevice
-          cp config.h config_components.h config.asm config_components.asm make-n.log cfg.log ../snap/ 2>/dev/null || true
-          cp libavutil/avconfig.h libavutil/ffversion.h ../snap/libavutil/ 2>/dev/null || true
-          for d in libavcodec/codec_list.c libavcodec/parser_list.c libavcodec/bsf_list.c libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c libavfilter/filter_list.c libavdevice/indev_list.c libavdevice/outdev_list.c; do cp "$d" "../snap/$d" 2>/dev/null || true; done
+          cp config.h config_components.h config.asm config_components.asm make-n.log cfg.log ../snap/ 2>/dev/null
+          cp libavutil/avconfig.h libavutil/ffversion.h ../snap/libavutil/ 2>/dev/null
+          for d in libavcodec/codec_list.c libavcodec/parser_list.c libavcodec/bsf_list.c libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c libavfilter/filter_list.c libavdevice/indev_list.c libavdevice/outdev_list.c; do cp "$d" "../snap/$d" 2>/dev/null; done
           grep -oE '\S+\.(c|S|asm)\b' make-n.log | sed 's|^|src/|; s|src/src/|src/|' | sort -u > ../snap/sources.txt
           echo "sources.txt: $(wc -l < ../snap/sources.txt)"
       - uses: actions/upload-artifact@v4
-        with: { name: ffmpeg-windows-snapshot, path: build/../snap/ }
+        with: { name: ffmpeg-windows-snapshot, path: snap/ }
