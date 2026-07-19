@@ -26,7 +26,6 @@ members = [
     "tests/examples/nlohmann.json",
     "tests/examples/openblas",
     "tests/examples/opencv",
-    "tests/examples/opencv5",
     "tests/examples/opencv-unifont",
     "tests/examples/opencv-dnn",
     "tests/examples/opencv-module",
