@@ -49,11 +49,12 @@ jobs:
             -DWITH_UNIFONT=OFF -DWITH_ADE=OFF \
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF
-          grep -q '#define HAVE_FFMPEG' bld/cvconfig.h || { echo FATAL: HAVE_FFMPEG missing; exit 1; }
       - name: reference build (materialize generators) + dump commands
         run: |
           ninja -C bld -k 0 > bld/ninja-build.log 2>&1 || true
           ninja -C bld -t commands > bld/ninja-cmds.log
+          grep -q cap_ffmpeg bld/ninja-cmds.log || { echo 'FATAL: cap_ffmpeg not compiled — ffmpeg videoio backend not active'; exit 1; }
+          echo "cap_ffmpeg TUs: $(grep -c cap_ffmpeg bld/ninja-cmds.log)"
       - name: gen descriptor
         run: |
           set -eux
