@@ -292,10 +292,10 @@ def compress(entries):
     for e in entries:
         if e.startswith("*/"):
             p = Path(e[2:])
-            by_dir[("*", str(p.parent), p.suffix)].append(p.name)
+            by_dir[("*", p.parent.as_posix(), p.suffix)].append(p.name)  # as_posix: forward slashes on windows
         else:  # mcpp_generated/...
             p = Path(e)
-            by_dir[("g", str(p.parent), p.suffix)].append(p.name)
+            by_dir[("g", p.parent.as_posix(), p.suffix)].append(p.name)
     out = []
     for (kind, d, suf), names in sorted(by_dir.items()):
         if kind == "*":
