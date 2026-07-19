@@ -107,14 +107,29 @@ jobs:
           echo "MCPP=$PWD/mcpp-${MCPP_VERSION}-linux-x86_64/bin/mcpp" >> "$GITHUB_ENV"
       - name: Parse descriptors with the resolver grammar (mcpp xpkg parse)
         run: |
+          # Per-OS sections other than the runner's host OS are skipped by a
+          # plain parse (xpkg skip-table), so a typo in a windows/macosx
+          # section is invisible on linux CI. `xpkg parse --all-os`
+          # (mcpp >= 0.0.100) parses EVERY per-OS section that ships xpm
+          # versions. Feature-detected from the pinned binary's --help, so
+          # this step keeps its current behavior under the 0.0.99 pin and
+          # tightens automatically on the 0.0.100 pin bump — no workflow
+          # change needed then.
+          ALLOS=""
+          if "$MCPP" xpkg parse --help 2>/dev/null | grep -q -- '--all-os'; then
+            ALLOS="--all-os"
+            echo "pinned mcpp supports --all-os: validating every shipped per-OS section"
+          else
+            echo "pinned mcpp (< 0.0.100) has no --all-os: host-OS sections only"
+          fi
           fail=0
           for f in pkgs/*/*.lua; do
-            if ! "$MCPP" xpkg parse "$f" > /dev/null; then
-              echo "::error file=$f::mcpp xpkg parse failed (resolver grammar)"
+            if ! "$MCPP" xpkg parse $ALLOS "$f" > /dev/null; then
+              echo "::error file=$f::mcpp xpkg parse $ALLOS failed (resolver grammar)"
               fail=1
             fi
           done
-          [ $fail -eq 0 ] && echo "All descriptors parse with mcpp ${MCPP_VERSION}."
+          [ $fail -eq 0 ] && echo "All descriptors parse with mcpp ${MCPP_VERSION}${ALLOS:+ (all-os)}."
           exit $fail
 
   mirror-cn-reachable:
