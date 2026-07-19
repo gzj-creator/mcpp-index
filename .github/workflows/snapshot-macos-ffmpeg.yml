@@ -3,6 +3,8 @@
 # the raw material for the compat.ffmpeg `macosx` block. workflow_dispatch only.
 name: snapshot-macos-ffmpeg
 on:
+  push:
+    branches: ['spike/ffmpeg-macos-snapshot']
   workflow_dispatch:
 jobs:
   capture:
