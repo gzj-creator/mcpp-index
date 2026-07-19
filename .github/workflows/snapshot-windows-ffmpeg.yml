@@ -1,5 +1,5 @@
-# TEMP R1 spike: can FFmpeg 8.1.2 configure (via MSYS2) + capture a windows-x86_64
-# snapshot on windows-latest? First step to determine Windows feasibility.
+# TEMP R1 spike v2: FFmpeg configure on windows with a PROPER MSVC dev env
+# (cl.exe on PATH via vcvars) + Git Bash + ffmpeg's documented --toolchain=msvc.
 name: snapshot-windows-ffmpeg
 on:
   push:
@@ -10,30 +10,22 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          install: make diffutils tar
-      - name: Fetch FFmpeg 8.1.2
-        shell: msys2 {0}
+      - uses: ilammy/msvc-dev-cmd@v1   # exports MSVC env (cl.exe/link.exe on PATH) to later steps
+      - name: Fetch + configure (msvc) + make -n
+        shell: bash
         run: |
+          echo "cl.exe: $(which cl.exe 2>/dev/null || echo MISSING)"
           curl -L -fsS -o ffmpeg.tar.gz "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.gz"
           tar -xzf ffmpeg.tar.gz
-      - name: configure (msvc-abi via clang) + make -n
-        shell: msys2 {0}
-        run: |
           mkdir build && cd build
-          echo "=== attempt A: --toolchain=msvc (cl.exe) ==="
-          ../ffmpeg-8.1.2/configure --toolchain=msvc --disable-autodetect --disable-programs --disable-doc >cfgA.log 2>&1 && echo "CONFIGURE-MSVC OK" || { echo "toolchain=msvc failed, tail:"; tail -25 cfgA.log; }
-          if [ ! -f config.h ]; then
-            echo "=== attempt B: clang targeting windows-msvc ==="
-            ../ffmpeg-8.1.2/configure --cc=clang --target-os=win64 --arch=x86_64 --disable-autodetect --disable-programs --disable-doc >cfgB.log 2>&1 && echo "CONFIGURE-CLANG OK" || { echo "clang win64 failed, tail:"; tail -25 cfgB.log; }
-          fi
+          # ffmpeg's MSVC path: cl.exe as cc; needs a couple of shims for the bash env
+          ../ffmpeg-8.1.2/configure --toolchain=msvc --disable-autodetect --disable-programs --disable-doc >cfg.log 2>&1 && echo "CONFIGURE-MSVC OK" || { echo "=== configure FAILED, tail ==="; tail -40 cfg.log; }
           if [ -f config.h ]; then
             echo "=== windows config.h facts ==="
-            grep -E '#define (OS_NAME|ARCH_X86_64|EXTERN_PREFIX|HAVE_W32THREADS|HAVE_PTHREADS|HAVE_MMX|HAVE_ALIGNED_MALLOC|HAVE_WINDOWS_H)' config.h
+            grep -E '#define (OS_NAME|ARCH_X86_64|EXTERN_PREFIX|SLIBSUF|HAVE_W32THREADS|HAVE_PTHREADS|HAVE_MMX|HAVE_ALIGNED_MALLOC|HAVE_WINDOWS_H|HAVE_INLINE_ASM)' config.h
             make -n >make-n.log 2>/dev/null || true
             echo ".c=$(grep -oE '[^ ]+\.c\b' make-n.log|sort -u|wc -l) .S=$(grep -oE '[^ ]+\.S\b' make-n.log|sort -u|wc -l) .asm=$(grep -oE '[^ ]+\.asm\b' make-n.log|sort -u|wc -l)"
+            echo "CONFIGURE SUCCEEDED — R1 configure step is achievable on windows"
           else
-            echo "BOTH CONFIGURE ATTEMPTS FAILED — windows configure is the R1 blocker"; exit 1
+            echo "R1: windows configure still blocked"; exit 1
           fi
