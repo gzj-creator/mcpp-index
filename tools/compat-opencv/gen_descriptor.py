@@ -86,7 +86,12 @@ for line in (BLD / "ninja-cmds.log").read_text().splitlines():
 assert compiles, "no compile commands parsed"
 print(f"parsed {len(compiles)} compiles")
 
-ISA_RE = re.compile(r"\.(sse4_1|sse4_2|avx512_skx|avx2|avx|fp16)\.cpp$")
+# x86 dispatch suffixes + aarch64 NEON dispatch suffixes (macOS/arm). Longest
+# alternatives first so `.neon_dotprod.cpp` isn't shadowed by `neon` (the
+# trailing `\.cpp$` anchor already forces a full match, but keep it explicit).
+ISA_RE = re.compile(
+    r"\.(sse4_1|sse4_2|avx512_skx|avx2|avx|fp16"
+    r"|neon_dotprod|neon_fp16|neon_bf16|neon_i8mm|neon)\.cpp$")
 MODS = ("core", "imgproc", "imgcodecs", "highgui", "videoio", "flann", "geometry", "dnn")
 # groups that belong to the additive `dnn` feature (sources gated; flags
 # entries stay unconditional — harmless when the feature is off)
