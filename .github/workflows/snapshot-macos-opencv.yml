@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install cmake ninja nasm
+      - run: pip3 install --break-system-packages numpy || pip3 install numpy
       - name: fetch sources (ffmpeg 8.1.2 + opencv 5.0.0)
         run: |
           set -eux
@@ -27,7 +28,7 @@ jobs:
           set -eux
           mkdir ffbuild && cd ffbuild
           ../ffmpeg-8.1.2/configure --cc=clang --prefix="$PWD/../ffprefix" \
-            --disable-shared --enable-static --disable-programs --disable-doc \
+            --enable-shared --disable-static --disable-programs --disable-doc \
             --disable-autodetect --enable-pic
           make -j"$(sysctl -n hw.ncpu)" && make install
           echo "FFMPEG_PREFIX=$PWD/../ffprefix" >> "$GITHUB_ENV"
