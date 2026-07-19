@@ -11,6 +11,11 @@ on:
   workflow_dispatch:
 
 env:
+  # 0.0.99: feature dep/feat forwarding (mcpp#243 — a feature can open a
+  # feature OF a dependency, e.g. opencv `dnn` forwarding compat.opencv/dnn);
+  # vendored xlings 0.4.67 for the >=2 index_repo install fix (mcpp#238 /
+  # openxlings/xlings#374); build.mcpp compiled program named `.exe` on
+  # Windows (mcpp#230 secondary surface, after the 0.0.96 scanner crash fix).
   # 0.0.98: closes the obj-path disambiguation follow-ups that gated the
   # source-build compat.opencv unification — #240 (link inputs now follow
   # the disambiguated object names, so a dependency + consumer sharing a
@@ -30,7 +35,7 @@ env:
   # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218); 0.0.91
   # added standard = "c++fly" to the resolver grammar, so c++fly descriptors
   # get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.98"
+  MCPP_VERSION: "0.0.99"
 
 jobs:
   lint:
@@ -182,21 +187,21 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.99"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.99"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
             ext: zip
             mcpp: bin/mcpp.exe
             xlings: registry/bin/xlings.exe
-            mcpp_version: "0.0.98"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.99"   # keep in sync with env.MCPP_VERSION
     env:
       MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:
