@@ -1,6 +1,6 @@
-# TEMP spike: capture the macOS-arm64 FFmpeg config snapshot (config.h + make -n
-# source list) on a macos-15 runner, matching the linux hermetic profile. This is
-# the raw material for the compat.ffmpeg `macosx` block. workflow_dispatch only.
+# TEMP: capture FFmpeg 8.1.2 config snapshots (config headers + *_list.c +
+# sources.txt) on ubuntu (linux-x86_64) AND macos-15 (macosx-arm64), matching
+# the hermetic profile. Raw material for the multi-platform compat.ffmpeg.
 name: snapshot-macos-ffmpeg
 on:
   push:
@@ -8,40 +8,42 @@ on:
   workflow_dispatch:
 jobs:
   capture:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, plat: linux }
+          - { os: macos-15,      plat: macosx }
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
+      - name: Install nasm (linux only — x86 NASM)
+        if: matrix.plat == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y nasm
       - name: Fetch FFmpeg 8.1.2
         run: |
           curl -L -fsS -o ffmpeg.tar.gz "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.gz"
           tar -xzf ffmpeg.tar.gz
-      - name: configure (hermetic profile, clang) + make -n
+      - name: configure + make -n
         run: |
           mkdir build && cd build
           ../ffmpeg-8.1.2/configure --cc=clang --disable-autodetect --disable-programs --disable-doc >configure.log 2>&1 || { echo "CONFIGURE FAILED"; tail -60 configure.log; exit 1; }
-          echo "=== configure OK. key config.h facts ==="
-          grep -E '#define (OS_NAME|ARCH_AARCH64|ARCH_X86_64|EXTERN_PREFIX|SLIBSUF|HAVE_NEON |HAVE_VFP |HAVE_PTHREADS |HAVE_W32THREADS |HAVE_MMX |HAVE_ALIGNED_MALLOC |HAVE_MEMALIGN |HAVE_MACH_ABSOLUTE_TIME |HAVE_UNISTD_H |HAVE_WINDOWS_H )' config.h
+          echo "=== ${{ matrix.plat }} config.h facts ==="
+          grep -E '#define (OS_NAME|ARCH_AARCH64|ARCH_X86_64|HAVE_NEON |HAVE_MMX |HAVE_PTHREADS |HAVE_W32THREADS )' config.h
           make -n >make-n.log 2>/dev/null || true
-          echo "=== source list (make -n ground truth) ==="
-          echo "total .c: $(grep -oE '[^ ]+\.c\b' make-n.log | sort -u | wc -l)"
-          echo "total .S (GAS asm): $(grep -oE '[^ ]+\.S\b' make-n.log | sort -u | wc -l)"
-          echo "total .asm (NASM): $(grep -oE '[^ ]+\.asm\b' make-n.log | sort -u | wc -l)"
-          echo "aarch64 dir sources: $(grep -oE '[^ ]+/aarch64/[^ ]+\.[cS]\b' make-n.log | sort -u | wc -l)"
-          echo "=== sample aarch64 .S ==="; grep -oE '[^ ]+/aarch64/[^ ]+\.S\b' make-n.log | sort -u | head -8
-          # COMPLETE snapshot (everything gen_descriptor.py needs): config
-          # headers + all *_list.c generated files + sources.txt (make -n ground
-          # truth, src/-prefixed, deduped) mirroring tools/compat-ffmpeg layout.
-          mkdir -p ../snapshot/libavutil ../snapshot/libavcodec ../snapshot/libavformat ../snapshot/libavfilter ../snapshot/libavdevice
-          cp config.h config_components.h configure.log make-n.log ../snapshot/ 2>/dev/null || true
-          cp libavutil/avconfig.h libavutil/ffversion.h ../snapshot/libavutil/ 2>/dev/null || true
-          cp libavcodec/codec_list.c libavcodec/parser_list.c libavcodec/bsf_list.c ../snapshot/libavcodec/ 2>/dev/null || true
-          cp libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c ../snapshot/libavformat/ 2>/dev/null || true
-          cp libavfilter/filter_list.c ../snapshot/libavfilter/ 2>/dev/null || true
-          cp libavdevice/indev_list.c libavdevice/outdev_list.c ../snapshot/libavdevice/ 2>/dev/null || true
-          # sources.txt: extract compiled .c/.S/.asm from make -n, src/-prefixed, deduped
-          grep -oE '\S+\.(c|S|asm)\b' make-n.log | sed 's|^\.\./ffmpeg-8.1.2/|src/|; s|^|src/|; s|src/src/|src/|' | sort -u > ../snapshot/sources.txt || true
-          echo "captured $(ls -R ../snapshot | grep -c '\.' ) files; sources.txt lines: $(wc -l < ../snapshot/sources.txt)"
+          echo ".c=$(grep -oE '[^ ]+\.c\b' make-n.log|sort -u|wc -l) .S=$(grep -oE '[^ ]+\.S\b' make-n.log|sort -u|wc -l) .asm=$(grep -oE '[^ ]+\.asm\b' make-n.log|sort -u|wc -l)"
+          mkdir -p ../snap/libavutil ../snap/libavcodec ../snap/libavformat ../snap/libavfilter ../snap/libavdevice
+          cp config.h config_components.h configure.log make-n.log ../snap/ 2>/dev/null || true
+          # config.asm only exists on x86 (NASM)
+          cp config.asm config_components.asm ../snap/ 2>/dev/null || true
+          cp libavutil/avconfig.h libavutil/ffversion.h ../snap/libavutil/ 2>/dev/null || true
+          cp libavcodec/codec_list.c libavcodec/parser_list.c libavcodec/bsf_list.c ../snap/libavcodec/ 2>/dev/null || true
+          cp libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c ../snap/libavformat/ 2>/dev/null || true
+          cp libavfilter/filter_list.c ../snap/libavfilter/ 2>/dev/null || true
+          cp libavdevice/indev_list.c libavdevice/outdev_list.c ../snap/libavdevice/ 2>/dev/null || true
+          grep -oE '\S+\.(c|S|asm)\b' make-n.log | sed 's|^|src/|; s|src/src/|src/|' | sort -u > ../snap/sources.txt
+          echo "sources.txt: $(wc -l < ../snap/sources.txt)"
       - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-macosx-arm64-snapshot
-          path: snapshot/
+          name: ffmpeg-${{ matrix.plat }}-snapshot
+          path: snap/
