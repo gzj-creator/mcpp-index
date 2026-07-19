@@ -551,7 +551,7 @@ L.append("""        },
     },
 }
 """)
-OUT.write_text("".join(L))
+OUT.write_text("".join(L), encoding="utf-8")  # explicit: windows locale is cp1252 and mangles the em-dash
 kb = OUT.stat().st_size // 1024
 print(f"gen_descriptor: {OUT} written — {len(sources_out)} source globs "
       f"(+{len(sources_asm)} asm), {len(manifest)} jpeg12/16 stub TUs, "
