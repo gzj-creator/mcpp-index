@@ -11,6 +11,13 @@ on:
   workflow_dispatch:
 
 env:
+  # 0.0.100: large-source-package platform batch — windows driver-style link
+  # via rspfile (mcpp#247), macOS build.mcpp env contract via posix_spawn
+  # (mcpp#248), `include_dirs_after` -> -idirafter (mcpp#249, what the
+  # migrated compat.ffmpeg/compat.opencv descriptors require), generated_files
+  # identical-content skip-write (incremental builds for frozen-snapshot
+  # packages), build.mcpp source=/include-dir[-after]= directives, and
+  # `xpkg parse --all-os` (the per-OS lint this CI now runs).
   # 0.0.99: feature dep/feat forwarding (mcpp#243 — a feature can open a
   # feature OF a dependency, e.g. opencv `dnn` forwarding compat.opencv/dnn);
   # vendored xlings 0.4.67 for the >=2 index_repo install fix (mcpp#238 /
@@ -35,7 +42,7 @@ env:
   # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218); 0.0.91
   # added standard = "c++fly" to the resolver grammar, so c++fly descriptors
   # get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.99"
+  MCPP_VERSION: "0.0.100"
 
 jobs:
   lint:
