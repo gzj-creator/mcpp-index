@@ -43,6 +43,18 @@ FF_PREFIX = os.environ.get("FFMPEG_PREFIX", "")
 BASE_BLD = Path(os.environ["BASE_BLD"]).resolve() if os.environ.get("BASE_BLD") else None
 FFMPEG_DEP_VERSION = os.environ.get("FFMPEG_DEP_VERSION", "8.1.2")
 
+def rel_posix(child, parent):
+    """child relative to parent as a forward-slashed str, or None if not under
+    parent. Separator-agnostic — Windows clang-cl command paths mix '/' and '\\',
+    so plain str.startswith(str(SRC)) comparisons fail; go through pathlib."""
+    c, p = Path(child), Path(parent)
+    if c == p:
+        return ""
+    try:
+        return c.relative_to(p).as_posix()
+    except ValueError:
+        return None
+
 # ── parse `ninja -t commands` ───────────────────────────────────────────
 compiles = []
 DRIVE_ABS = re.compile(r"^[A-Za-z]:[\\/]")
@@ -232,7 +244,7 @@ for mod in MODS:
 
 # ── sources (real paths) + tu manifest (jpeg12/16 only) ─────────────────
 def wrap_rel(src_abs):
-    return str(Path(src_abs).relative_to(SRC))
+    return Path(src_abs).relative_to(SRC).as_posix()
 
 manifest, sources_real, sources_asm, kernel_files, seen = [], [], [], [], set()
 sources_dnn = []
@@ -253,7 +265,7 @@ for tool, src_abs, defs, mflags, incs, std in compiles:
             seen.add(key)
             manifest.append((f"?dnn\t{dk}\t{tgt}") if dk == "mlasgemm" else f"{dk}\t{tgt}")
         continue
-    if src_abs.startswith(str(SRC)):
+    if rel_posix(src_abs, SRC) is not None:
         e = f"*/{wrap_rel(src_abs)}"
     elif "opencl_kernels_" in src_abs:
         # synthesized by build.mcpp on the consumer (clsrc/…); flags via
@@ -263,7 +275,7 @@ for tool, src_abs, defs, mflags, incs, std in compiles:
         continue
     else:
         # snapshot file compiled from the build dir (dispatch stubs)
-        e = f"mcpp_generated/{Path(src_abs).relative_to(BLD)}"
+        e = f"mcpp_generated/{rel_posix(src_abs, BLD)}"
     if e in seen: continue
     seen.add(e)
     (sources_dnn if dk in FEATURE_DNN_GROUPS else sources_real).append(e)
@@ -308,9 +320,15 @@ print(f"sources compressed: {len(sources_real)} base files -> {len(sources_out)}
 
 # ── snapshot files (exclude synthesized classes) ────────────────────────
 def rewrite(text):
-    out = (text.replace(f'"{SRC}/', '"').replace(f'{SRC}/', '')
-               .replace(f'"{BLD}/', '"').replace(f'{BLD}/', '')
-               .replace(str(BLD), "<build>").replace(str(SRC), "<src>"))
+    out = text
+    # neutralize build-dir/source-tree paths in both separator conventions
+    # (Windows generated headers may carry backslash OR forward-slash paths)
+    for root in (str(SRC), Path(SRC).as_posix()):
+        out = out.replace(f'"{root}/', '"').replace(f'{root}/', '')
+    for root in (str(BLD), Path(BLD).as_posix()):
+        out = out.replace(f'"{root}/', '"').replace(f'{root}/', '')
+    out = (out.replace(str(BLD), "<build>").replace(Path(BLD).as_posix(), "<build>")
+              .replace(str(SRC), "<src>").replace(Path(SRC).as_posix(), "<src>"))
     if FF_PREFIX:
         assert FF_PREFIX not in out, "ffmpeg prefix path leaked into snapshot"
     return out
@@ -325,7 +343,7 @@ for p in sorted(BLD.rglob("*")):
         continue
     if "builtin_font" in p.name or "opencl_kernels" in p.name:
         continue    # build.mcpp synthesizes these
-    rel = p.relative_to(BLD)
+    rel = p.relative_to(BLD).as_posix()
     content = rewrite(p.read_text(errors="replace"))
     assert "]==]" not in content, f"lua long-bracket collision in {rel}"
     assert len(content) < 200_000, f"unexpectedly large snapshot file {rel}"
@@ -368,10 +386,11 @@ for c in compiles:
     for i in c[4]:
         if FF_PREFIX and i.startswith(FF_PREFIX):
             continue    # served by the compat.ffmpeg dependency's include dirs
-        if i.startswith(str(SRC)):
-            r = "*/" + str(Path(i).relative_to(SRC)) if i != str(SRC) else "*"
-        elif i.startswith(str(BLD)):
-            r = "mcpp_generated/" + str(Path(i).relative_to(BLD)) if i != str(BLD) else "mcpp_generated"
+        rs, rb = rel_posix(i, SRC), rel_posix(i, BLD)
+        if rs is not None:
+            r = "*" if rs == "" else "*/" + rs
+        elif rb is not None:
+            r = "mcpp_generated" if rb == "" else "mcpp_generated/" + rb
         else:
             continue
         if r not in iseen:
