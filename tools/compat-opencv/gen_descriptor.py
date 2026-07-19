@@ -455,8 +455,8 @@ package = {{
 {deps_line}        include_dirs = {{
             {lua_list(incdirs, " " * 12)}
         }},
-        cxxflags = {{ {", ".join(f'"{m}"' for m in baseline_m)}, "-w" }},
-        cflags   = {{ {", ".join(f'"{m}"' for m in baseline_m)}, "-w" }},
+        cxxflags = {{ {", ".join([f'"{m}"' for m in baseline_m] + ['"-w"'])} }},
+        cflags   = {{ {", ".join([f'"{m}"' for m in baseline_m] + ['"-w"'])} }},
         flags = {{
             {("\n" + " " * 12).join(flags_entries)}
         }},
