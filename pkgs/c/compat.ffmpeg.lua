@@ -6,6 +6,9 @@
 -- the cross-OS common `sources` to the top level; per-OS sections are
 -- additive overlays keeping only their delta) gated by
 -- tools/compat-gen/verify.py — see tools/compat-gen/README.md.
+-- REQUIRES mcpp >= 0.0.100: uses `include_dirs_after` (mcpp#249) — older
+-- mcpp silently drops unknown keys, i.e. would build with the source-root
+-- includes missing. Publication is gated on the 0.0.100 release train.
 package = {
     spec = "1", namespace = "compat", name = "compat.ffmpeg",
     description = "FFmpeg 8.1.2 multimedia libraries, full source build (LGPL profile, multi-platform)",
@@ -24,11 +27,21 @@ package = {
         c_standard = "c17",
         targets = { ffmpeg = { kind = "lib" } },
         include_dirs = {
+            -- own generated headers stay -I: they must shadow same-named
+            -- headers inside the source tree
             "mcpp_generated",
             "mcpp_generated/libavcodec",
             "mcpp_generated/libavformat",
             "mcpp_generated/libavfilter",
             "mcpp_generated/libavdevice",
+        },
+        -- mcpp#249 (needs mcpp >= 0.0.100): source roots are searched AFTER
+        -- the toolchain's system dirs (-idirafter) so ffmpeg's top-level
+        -- VERSION file can't shadow libc++'s <version> on case-insensitive
+        -- filesystems (macOS), while <libavutil/...>-style includes still
+        -- resolve. C/C++-visible only — NASM gets its dirs via plain
+        -- include_dirs (see the linux section).
+        include_dirs_after = {
             "*",
             "*/libavcodec",
         },
@@ -2057,6 +2070,17 @@ package = {
                 "-lm",
             },
             include_dirs = {
+                -- NASM-visible dirs stay plain include_dirs (-I): nasm has
+                -- no -idirafter (mcpp's nasm rule shares $local_includes, so
+                -- an -idirafter entry is useless to it), and none of these
+                -- shadow system headers. The source root "*" is listed here
+                -- IN ADDITION to the top-level include_dirs_after entry:
+                -- 170 .asm files %include root-relative paths
+                -- ("libavutil/x86/x86inc.asm"), which only the root -I can
+                -- resolve for nasm. Harmless for linux C units (the dup is
+                -- just a higher-priority -I on a case-SENSITIVE fs, i.e.
+                -- exactly the pre-#249 behavior linux always had).
+                "*",
                 "*/libavutil/x86",
                 "*/libavcodec/x86",
                 "*/libavfilter/x86",

@@ -11,6 +11,9 @@
 -- OpenCL kernel embeddings) are synthesized on the consumer by the embedded
 -- build.mcpp — byte-faithful ports verified against the reference CMake
 -- build. Regenerate: sh tools/compat-opencv/gen_config.sh (this repo).
+-- REQUIRES mcpp >= 0.0.100: uses `include_dirs_after` (mcpp#249) — older
+-- mcpp silently drops unknown keys, i.e. would build with the source-root
+-- include missing. Publication is gated on the 0.0.100 release train.
 package = {
     spec        = "1",
     namespace   = "compat",
@@ -38,7 +41,6 @@ package = {
         deps = { ["compat.ffmpeg"] = "8.1.2" },
         include_dirs = {
             "mcpp_generated",
-            "*",
             "*/3rdparty/dlpack/include",
             "mcpp_generated/3rdparty/libjpeg-turbo",
             "*/3rdparty/libjpeg-turbo/src",
@@ -71,6 +73,18 @@ package = {
             "mcpp_generated/modules/videoio",
             "*/modules/highgui/include",
             "mcpp_generated/modules/highgui",
+        },
+        -- mcpp#249 (needs mcpp >= 0.0.100): the raw source root is searched
+        -- AFTER the toolchain's system dirs (-idirafter) so stray top-level
+        -- files can't shadow standard headers on case-insensitive
+        -- filesystems (macOS leg). Only the root moves: the vendored
+        -- 3rdparty dirs above (zlib/libpng/libjpeg-turbo/protobuf/...)
+        -- MUST stay plain -I — shadowing the system copies is their job —
+        -- and the libjpeg-turbo simd/nasm + simd/x86_64 dirs must stay
+        -- NASM-visible (nasm has no -idirafter; its %includes are bare or
+        -- same-dir file names, so the root demotion doesn't affect it).
+        include_dirs_after = {
+            "*",
         },
         cxxflags = { "-msse3", "-w" },
         cflags   = { "-msse3", "-w" },
