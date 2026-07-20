@@ -19,7 +19,7 @@ jobs:
       - name: tools (llvm/clang-cl, nasm, ninja)
         shell: pwsh
         run: |
-          choco install -y --no-progress nasm ninja llvm | Out-Null
+          choco install -y --no-progress nasm ninja llvm pkgconfiglite | Out-Null
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: build shared FFmpeg 8.1.2 prefix (MSVC) for cmake videoio discovery
@@ -57,10 +57,14 @@ jobs:
         shell: bash
         run: |
           set -eux
-          # pkg-config (from MSYS2) + the ffmpeg prefix's .pc; skip OpenCV's prebuilt-dll download
-          export PKG_CONFIG="$(cygpath -u 'C:/msys64/ucrt64/bin/pkg-config.exe' 2>/dev/null || command -v pkg-config)"
+          # windows-native pkg-config (pkgconfiglite) + the ffmpeg prefix's .pc; skip
+          # OpenCV's prebuilt-dll download so it uses our built shared FFmpeg.
+          export PKG_CONFIG="$(command -v pkg-config)"
           export PKG_CONFIG_PATH="C:/ffprefix/lib/pkgconfig"
-          "$PKG_CONFIG" --exists libavcodec && echo "pkg-config sees ffmpeg: $("$PKG_CONFIG" --modversion libavcodec)" || echo "WARN pkg-config no ffmpeg"
+          echo "pkg-config: $PKG_CONFIG"; ls -la C:/ffprefix/lib/pkgconfig/ || true
+          "$PKG_CONFIG" --exists libavcodec libavformat libavutil libswscale \
+            && echo "pkg-config sees ffmpeg: avcodec $("$PKG_CONFIG" --modversion libavcodec)" \
+            || echo "WARN pkg-config missing some ffmpeg .pc"
           cmake -G Ninja -S "$OPENCV_SRC" -B bld \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
