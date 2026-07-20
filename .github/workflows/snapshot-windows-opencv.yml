@@ -57,6 +57,15 @@ jobs:
           echo "b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095  opencv.tar.gz" | sha256sum -c -
           tar -xzf opencv.tar.gz
           echo "OPENCV_SRC=$PWD/opencv-5.0.0" >> "$GITHUB_ENV"
+          # Instrument detect_ffmpeg.cmake: dump HAVE_FFMPEG + per-lib versions at the
+          # very end so we see exactly why HAVE_FFMPEG ends false despite FFMPEG_FOUND=1.
+          DF="$PWD/opencv-5.0.0/modules/videoio/cmake/detect_ffmpeg.cmake"
+          {
+            echo ''
+            echo 'message(STATUS "mcpp-dbg: HAVE_FFMPEG=[${HAVE_FFMPEG}] FFMPEG_FOUND=[${FFMPEG_FOUND}] HAVE_FFMPEG_WRAPPER=[${HAVE_FFMPEG_WRAPPER}]")'
+            echo 'message(STATUS "mcpp-dbg: versions avcodec=[${FFMPEG_libavcodec_VERSION}] avformat=[${FFMPEG_libavformat_VERSION}] avutil=[${FFMPEG_libavutil_VERSION}] swscale=[${FFMPEG_libswscale_VERSION}]")'
+            echo 'message(STATUS "mcpp-dbg: used=[${_used_ffmpeg_libraries}] FFMPEG_LIBRARIES=[${FFMPEG_LIBRARIES}]")'
+          } >> "$DF"
       - name: cmake configure (clang-cl, +videoio/FFmpeg via pkg-config, headless)
         shell: bash
         run: |
