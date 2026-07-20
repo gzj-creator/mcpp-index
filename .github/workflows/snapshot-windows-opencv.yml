@@ -22,6 +22,10 @@ jobs:
           choco install -y --no-progress nasm ninja llvm pkgconfiglite | Out-Null
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          # pkgconfiglite installs pkg-config.exe to the choco bin — put it on the
+          # NATIVE windows PATH so cmake's find_package(PkgConfig) sets PKG_CONFIG_FOUND
+          echo "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          Get-Command pkg-config | Select-Object -ExpandProperty Source
       - name: build shared FFmpeg 8.1.2 prefix (MSVC) for cmake videoio discovery
         shell: msys2 {0}
         run: |
@@ -59,16 +63,19 @@ jobs:
           set -eux
           # windows-native pkg-config (pkgconfiglite) + the ffmpeg prefix's .pc; skip
           # OpenCV's prebuilt-dll download so it uses our built shared FFmpeg.
-          export PKG_CONFIG="$(command -v pkg-config)"
+          # Pass a WINDOWS-style path to cmake (a /c/ unix path leaves PKG_CONFIG_FOUND
+          # false → OpenCV's pkg-config FFmpeg branch never runs). PKG_CONFIG_PATH is
+          # inherited by cmake's pkg-config invocations.
+          PKGCFG_WIN="$(cygpath -w "$(command -v pkg-config)")"
           export PKG_CONFIG_PATH="C:/ffprefix/lib/pkgconfig"
-          echo "pkg-config: $PKG_CONFIG"; ls -la C:/ffprefix/lib/pkgconfig/ || true
-          "$PKG_CONFIG" --exists libavcodec libavformat libavutil libswscale \
-            && echo "pkg-config sees ffmpeg: avcodec $("$PKG_CONFIG" --modversion libavcodec)" \
+          echo "pkg-config (win path): $PKGCFG_WIN"; ls -la C:/ffprefix/lib/pkgconfig/ || true
+          pkg-config --exists libavcodec libavformat libavutil libswscale \
+            && echo "pkg-config sees ffmpeg: avcodec $(pkg-config --modversion libavcodec)" \
             || echo "WARN pkg-config missing some ffmpeg .pc"
           cmake -G Ninja -S "$OPENCV_SRC" -B bld \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
-            -DPKG_CONFIG_EXECUTABLE="$PKG_CONFIG" \
+            -DPKG_CONFIG_EXECUTABLE="$PKGCFG_WIN" \
             -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
             -DENABLE_LIBJPEG_TURBO_SIMD=OFF \
