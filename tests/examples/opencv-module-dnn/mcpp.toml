@@ -18,3 +18,7 @@ opencv = { version = "0.0.6", features = ["dnn"] }
 # forwards compat.opencv/dnn which now has the per-OS NEON dnn payload).
 [target.'cfg(macos)'.dependencies]
 opencv = { version = "0.0.6", features = ["dnn"] }
+
+# windows: `import opencv.dnn;` on windows-x86_64 (clang-cl).
+[target.'cfg(windows)'.dependencies]
+opencv = { version = "0.0.6", features = ["dnn"] }
