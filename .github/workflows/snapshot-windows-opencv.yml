@@ -117,7 +117,7 @@ jobs:
           cmake -G Ninja -S "$OPENCV_SRC" -B bld \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
-            -DCMAKE_MODULE_PATH="$(cygpath -w "$PWD/cmakemods")" \
+            -DCMAKE_MODULE_PATH="$(cygpath -m "$PWD/cmakemods")" \
             -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
             -DENABLE_LIBJPEG_TURBO_SIMD=OFF \
