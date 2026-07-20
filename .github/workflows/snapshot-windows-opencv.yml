@@ -90,9 +90,14 @@ jobs:
           VF=$(pkg-config --modversion libavformat)
           VU=$(pkg-config --modversion libavutil)
           VS=$(pkg-config --modversion libswscale)
-          LIBS=$(ls C:/ffprefix/lib/*.lib 2>/dev/null | sed 's#\\#/#g' | tr '\n' ';')
+          # best-effort import-lib discovery (MSVC shared build names them avcodec.lib etc.,
+          # in lib/ or bin/); non-fatal — the target is created from the includes alone and
+          # the build check is skipped, so empty LIBS still compiles cap_ffmpeg.cpp. mcpp
+          # links compat.ffmpeg (windows) at consume time regardless.
+          echo "=== C:/ffprefix tree (lib + bin) ==="; ls -la C:/ffprefix/lib/ C:/ffprefix/bin/ 2>/dev/null | head -40 || true
+          LIBS=$( { ls C:/ffprefix/lib/*.lib C:/ffprefix/bin/*.lib 2>/dev/null || true; } | sed 's#\\#/#g' | tr '\n' ';')
           echo "ffmpeg versions: avcodec=$VC avformat=$VF avutil=$VU swscale=$VS"
-          echo "ffmpeg import libs: $LIBS"
+          echo "ffmpeg import libs: ${LIBS:-<none found — using includes-only target>}"
           mkdir -p cmakemods
           cat > cmakemods/FindFFMPEG.cmake <<CM
           # mcpp windows shim: report the MSVC-built shared FFmpeg 8.1.2 as found so OpenCV's
