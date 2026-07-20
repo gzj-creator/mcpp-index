@@ -72,10 +72,19 @@ jobs:
           pkg-config --exists libavcodec libavformat libavutil libswscale \
             && echo "pkg-config sees ffmpeg: avcodec $(pkg-config --modversion libavcodec)" \
             || echo "WARN pkg-config missing some ffmpeg .pc"
+          # OpenCV gates find_package(PkgConfig) behind if(UNIX OR MINGW) — a clang-cl
+          # (windows-MSVC) build is neither, so PkgConfig_FOUND stays false and
+          # detect_ffmpeg's pkg-config branch never runs. Force it via a project-include
+          # that runs right after project(OpenCV), setting PkgConfig_FOUND before detection.
+          cat > force_pkgconfig.cmake <<'CM'
+          find_package(PkgConfig REQUIRED)
+          message(STATUS "mcpp: forced PkgConfig_FOUND=${PkgConfig_FOUND} (bypassing OpenCV's UNIX/MINGW gate for windows FFmpeg pkg-config)")
+          CM
           cmake -G Ninja -S "$OPENCV_SRC" -B bld \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
             -DPKG_CONFIG_EXECUTABLE="$PKGCFG_WIN" \
+            -DCMAKE_PROJECT_OpenCV_INCLUDE="$(cygpath -w "$PWD/force_pkgconfig.cmake")" \
             -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
             -DENABLE_LIBJPEG_TURBO_SIMD=OFF \
