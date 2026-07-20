@@ -126,21 +126,104 @@ end
 
 -- mcpp: neutral-common (from base) + per-OS blocks (each OS's platform-specific keys)
 -- `deps` is PER-OS: linux/macosx carry compat.ffmpeg (videoio backend); a core-only
--- windows profile (no videoio) carries none, so it must not inherit a global dep.
-local PEROS = { "include_dirs", "cxxflags", "cflags", "flags", "sources", "generated_files", "deps" }
+-- profile (no videoio) carries none, so it must not inherit a global dep.
+-- `flags` is handled specially below (dnn-group flag-globs relocate into the feature).
+local PEROS = { "include_dirs", "cxxflags", "cflags", "sources", "generated_files", "deps" }
+
+-- ── per-OS `dnn` feature (mcpp#253 common/delta) ────────────────────────
+-- The dnn feature's payload splits into a cross-platform COMMON part (dnn/protobuf/
+-- mlas C++, mlas_hgemm_stub) and a per-arch SIMD DELTA (x86: mlas/lib/x86_64/*.S +
+-- avx/avx2/avx512 kernels; arm: mlas/lib/aarch64/*.S + neon/neon_fp16 kernels).
+-- mcpp 0.0.101 per-OS features append per sub-key, so COMMON rides neutral
+-- features.dnn and each OS's DELTA rides mcpp.<os>.features.dnn. dnn-group flag-globs
+-- (mlas/protobuf/mlasgemm + per-ISA) ride features.dnn.flags so the feature-off base
+-- has no dead globs (mcpp 0.0.101 warning). Inputs are normalized whether they
+-- carried those globs in base `flags` (pre-warnfix descriptors) or features.dnn.flags.
+local function is_dnn_glob(g)
+    if type(g) ~= "string" then return false end
+    for _, m in ipairs({ "3rdparty/mlas", "3rdparty/protobuf", "modules/dnn", "tu/mlasgemm" }) do
+        if g:find(m, 1, true) then return true end
+    end
+    return false
+end
+local function ser_id(v) return ser(v, "") end
+
+local pkgs, order = {}, {}
+for _, e in ipairs(INPUTS) do pkgs[e.os] = load_pkg(e.path); order[#order+1] = e.os end
+local dnn_src, dnn_flg, base_flg = {}, {}, {}
+for _, os_ in ipairs(order) do
+    local p = pkgs[os_]
+    local feat = (p.mcpp.features and p.mcpp.features.dnn) or {}
+    local srcs, flgs, cleaned = {}, {}, {}
+    for _, s in ipairs(feat.sources or {}) do srcs[#srcs+1] = s end
+    for _, f in ipairs(feat.flags or {}) do flgs[#flgs+1] = f end
+    for _, f in ipairs(p.mcpp.flags or {}) do
+        if type(f) == "table" and is_dnn_glob(f.glob) then flgs[#flgs+1] = f
+        else cleaned[#cleaned+1] = f end
+    end
+    dnn_src[os_], dnn_flg[os_], base_flg[os_] = srcs, flgs, cleaned
+end
+
+-- active = OSes that actually carry a dnn payload; common is their intersection
+local active = {}
+for _, os_ in ipairs(order) do if #dnn_src[os_] > 0 then active[#active+1] = os_ end end
+local function split_common(map)
+    if #active == 0 then return {}, {} end
+    local counts = {}
+    for _, os_ in ipairs(active) do
+        local seen = {}
+        for _, v in ipairs(map[os_]) do
+            local id = ser_id(v)
+            if not seen[id] then seen[id] = true; counts[id] = (counts[id] or 0) + 1 end
+        end
+    end
+    local common, cids = {}, {}
+    for _, v in ipairs(map[active[1]]) do
+        local id = ser_id(v)
+        if counts[id] == #active and not cids[id] then cids[id] = true; common[#common+1] = v end
+    end
+    local delta = {}
+    for _, os_ in ipairs(order) do
+        local d = {}
+        for _, v in ipairs(map[os_] or {}) do if not cids[ser_id(v)] then d[#d+1] = v end end
+        delta[os_] = d
+    end
+    return common, delta
+end
+local common_src, delta_src = split_common(dnn_src)
+local common_flg, delta_flg = split_common(dnn_flg)
+
+-- neutral features: base's non-dnn features (unifont) verbatim; dnn = common-only
+local neutral_features = {}
+for fname, fdef in pairs(base.mcpp.features or {}) do
+    if fname ~= "dnn" then neutral_features[fname] = fdef end
+end
+local base_dnn = base.mcpp.features and base.mcpp.features.dnn
+neutral_features.dnn = {
+    defines = (base_dnn and base_dnn.defines) or { "HAVE_OPENCV_DNN" },
+    flags   = common_flg,
+    sources = common_src,
+}
+
 merged.mcpp = {
     language = base.mcpp.language,
     targets  = base.mcpp.targets,
-    features = base.mcpp.features,   -- unifont (neutral) + dnn (x86; opencv-dnn stays linux-only)
+    features = neutral_features,
 }
-for _, e in ipairs(INPUTS) do
-    local p = load_pkg(e.path)
+for _, os_ in ipairs(order) do
+    local p = pkgs[os_]
     local blk = {}
     for _, k in ipairs(PEROS) do blk[k] = p.mcpp[k] end
-    -- ldflags: the single-OS descriptor carries them in its own mcpp.<os> sub-block
-    local sub = p.mcpp[e.os]
+    blk.flags = base_flg[os_]                       -- dnn-group globs stripped
+    local sub = p.mcpp[os_]
     if sub and sub.ldflags then blk.ldflags = sub.ldflags end
-    merged.mcpp[e.os] = blk
+    if #dnn_src[os_] > 0 then                         -- this OS supports dnn -> its delta
+        local fd = {}
+        if #delta_src[os_] > 0 then fd.sources = delta_src[os_] end
+        if #delta_flg[os_] > 0 then fd.flags = delta_flg[os_] end
+        if next(fd) then blk.features = { dnn = fd } end
+    end
+    merged.mcpp[os_] = blk
 end
 
 -- ---- emit ----
