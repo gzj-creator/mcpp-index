@@ -1,0 +1,72 @@
+# TEMP spike (Item D): capture the macOS-arm64 `dnn` FEATURE sources for compat.opencv.
+# The shipped features.dnn is x86-only (3rdparty/mlas/lib/x86_64/*.S + AVX/AVX2/AVX512
+# dispatch kernels) so dnn is unavailable on macOS-arm. Build core+imgproc+dnn WITH the
+# vendored protobuf on macos-15 (arm64, NEON) so mlas selects lib/aarch64/*.S and the dnn
+# dispatch kernels are NEON — gen_descriptor emits a features.dnn with the arm source set.
+# mcpp 0.0.101 per-OS features (mcpp.macosx.features.dnn) then carries it alongside the
+# x86 linux/windows dnn. Headless highgui (matches the shipped macOS base). No ffmpeg
+# (this snapshot only harvests the dnn feature; base videoio comes from the shipped block).
+name: snapshot-macos-dnn
+on: { workflow_dispatch: {}, push: { branches: [feat/opencv-macos-dnn] } }
+jobs:
+  snapshot:
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install cmake ninja nasm
+      - run: pip3 install --break-system-packages numpy || pip3 install numpy
+      - name: fetch opencv 5.0.0
+        run: |
+          set -eux
+          curl -L -fsS -o opencv.tar.gz https://github.com/opencv/opencv/archive/refs/tags/5.0.0.tar.gz
+          echo "b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095  opencv.tar.gz" | shasum -a 256 -c -
+          tar -xzf opencv.tar.gz
+          echo "OPENCV_SRC=$PWD/opencv-5.0.0" >> "$GITHUB_ENV"
+          # Headless highgui on macOS (matches the shipped base): neutralize the
+          # unconditional HAVE_COCOA on APPLE+clang so highgui falls through to headless.
+          sed -i.bak 's/set(HAVE_COCOA YES)/message(STATUS "mcpp: HAVE_COCOA disabled -> headless highgui")/' \
+            "$PWD/opencv-5.0.0/cmake/OpenCVFindLibsGUI.cmake"
+      - name: cmake configure opencv (core+imgproc+dnn, aarch64/NEON, vendored protobuf)
+        run: |
+          set -eux
+          cmake -G Ninja -S "$OPENCV_SRC" -B bld -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_LIST=core,imgproc,dnn \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
+            -DBUILD_PROTOBUF=ON -DWITH_PROTOBUF=ON -DOPENCV_DNN_OPENCL=OFF \
+            -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF \
+            -DWITH_OPENEXR=OFF -DWITH_AVIF=OFF -DWITH_JPEGXL=OFF -DWITH_IMGCODEC_GIF=OFF \
+            -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_LAPACK=OFF -DWITH_EIGEN=OFF -DWITH_ITT=OFF \
+            -DWITH_QT=OFF -DWITH_OPENGL=OFF -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF \
+            -DWITH_AVFOUNDATION=OFF -DWITH_V4L=OFF -DWITH_OBSENSOR=OFF \
+            -DWITH_CAROTENE=OFF -DWITH_FLATBUFFERS=OFF \
+            -DWITH_KLEIDICV=OFF -DWITH_NDSRVP=OFF -DWITH_HAL_RVV=OFF \
+            -DWITH_UNIFONT=OFF -DWITH_ADE=OFF \
+            -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF
+      - name: reference build (materialize generators) + dump commands
+        run: |
+          ninja -C bld -k 0 > bld/ninja-build.log 2>&1 || true
+          ninja -C bld -t commands > bld/ninja-cmds.log
+          echo "=== dnn present? ==="
+          grep -c "modules/dnn/src" bld/ninja-cmds.log || echo "NO dnn sources"
+          echo "=== mlas arch: aarch64 (NEON) expected, NOT x86_64 ==="
+          grep -oE 'mlas/lib/(aarch64|x86_64|arm64)[^ ]*\.(S|cpp)' bld/ninja-cmds.log | sort -u | head
+          echo "=== dnn NEON dispatch kernels ==="
+          grep -oE '\.(neon[a-z0-9_]*|fp16)\.cpp' bld/ninja-cmds.log | sort | uniq -c || true
+      - name: gen descriptor (harvest features.dnn for macOS)
+        run: |
+          set -eux
+          python3 tools/compat-opencv/gen_descriptor.py \
+            "$OPENCV_SRC" bld 5.0.0 \
+            b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095 \
+            compat.opencv.macdnn.lua || echo "gen_descriptor needs tweaks — raw artifacts uploaded"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: opencv-macos-dnn-snapshot
+          path: |
+            compat.opencv.macdnn.lua
+            bld/cvconfig.h
+            bld/ninja-cmds.log
+            bld/ninja-build.log
