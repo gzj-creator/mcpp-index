@@ -99,8 +99,8 @@ jobs:
             -DWITH_UNIFONT=OFF -DWITH_ADE=OFF \
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF 2>&1 | tail -50
-          echo "=== FFmpeg detected by cmake? ==="
-          grep -iE "FFMPEG|videoio" bld/CMakeCache.txt | grep -iE "HAVE|FFMPEG_FOUND" | head || true
+          echo "=== FFmpeg cmake vars (pin why HAVE_FFMPEG=false despite FFMPEG_FOUND=1) ==="
+          grep -iE "FFMPEG" bld/CMakeCache.txt | head -40 || true
       - name: reference build (materialize generators) + dump commands
         shell: bash
         run: |
