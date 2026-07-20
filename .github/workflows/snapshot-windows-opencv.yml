@@ -6,20 +6,39 @@
 # question: does mcpp clang-MSVC compile OpenCV's C++ from a clang-cl snapshot.
 # videoio+FFmpeg is a follow-up. Uploads the descriptor AND raw artifacts.
 name: snapshot-windows-opencv
-on: { workflow_dispatch: {}, push: { branches: [spike/opencv-windows-snapshot] } }
+on: { workflow_dispatch: {}, push: { branches: [spike/opencv-windows-snapshot, feat/opencv-windows-videoio] } }
 jobs:
   snapshot:
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1        # MSVC SDK headers/libs for clang-cl
+      - uses: ilammy/msvc-dev-cmd@v1        # MSVC SDK headers/libs for clang-cl + cl.exe
+      - uses: msys2/setup-msys2@v2          # make + pkg-config for the ffmpeg prefix build
+        with: { msystem: UCRT64, install: 'make diffutils tar pkgconf', path-type: inherit }
       - name: tools (llvm/clang-cl, nasm, ninja)
         shell: pwsh
         run: |
           choco install -y --no-progress nasm ninja llvm | Out-Null
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: build shared FFmpeg 8.1.2 prefix (MSVC) for cmake videoio discovery
+        shell: msys2 {0}
+        run: |
+          set -eux
+          curl -L -fsS -o ffmpeg.tar.gz https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.gz
+          echo "32faba5ef67340d54724941eae1425580791195312a4fd13bf6f820a2818bf22  ffmpeg.tar.gz" | sha256sum -c -
+          tar -xzf ffmpeg.tar.gz
+          mkdir ffbuild && cd ffbuild
+          # windows path prefix so the generated .pc / clang-cl consumption use C:/… not /c/…
+          PFX="C:/ffprefix"
+          ../ffmpeg-8.1.2/configure --toolchain=msvc --prefix="$PFX" \
+            --enable-shared --disable-static --disable-programs --disable-doc \
+            --disable-autodetect --disable-network >cfg.log 2>&1 \
+            && echo "FFMPEG CONFIGURE OK" || { echo FAIL; tail -30 cfg.log; exit 1; }
+          make -j"$(nproc)" >/dev/null 2>&1 && make install
+          echo "FFPREFIX=$PFX" >> "$GITHUB_ENV"
+          ls "$PFX/lib/pkgconfig" || true
       - name: probe toolchain
         shell: bash
         run: |
@@ -34,31 +53,41 @@ jobs:
           echo "b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095  opencv.tar.gz" | sha256sum -c -
           tar -xzf opencv.tar.gz
           echo "OPENCV_SRC=$PWD/opencv-5.0.0" >> "$GITHUB_ENV"
-      - name: cmake configure (clang-cl, headless core, hermetic)
+      - name: cmake configure (clang-cl, +videoio/FFmpeg via pkg-config, headless)
         shell: bash
         run: |
           set -eux
+          # pkg-config (from MSYS2) + the ffmpeg prefix's .pc; skip OpenCV's prebuilt-dll download
+          export PKG_CONFIG="$(cygpath -u 'C:/msys64/ucrt64/bin/pkg-config.exe' 2>/dev/null || command -v pkg-config)"
+          export PKG_CONFIG_PATH="C:/ffprefix/lib/pkgconfig"
+          "$PKG_CONFIG" --exists libavcodec && echo "pkg-config sees ffmpeg: $("$PKG_CONFIG" --modversion libavcodec)" || echo "WARN pkg-config no ffmpeg"
           cmake -G Ninja -S "$OPENCV_SRC" -B bld \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
-            -DBUILD_LIST=core,imgproc,imgcodecs,highgui \
+            -DPKG_CONFIG_EXECUTABLE="$PKG_CONFIG" \
+            -DBUILD_LIST=core,imgproc,imgcodecs,highgui,videoio \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON \
             -DENABLE_LIBJPEG_TURBO_SIMD=OFF \
+            -DWITH_FFMPEG=ON -DOPENCV_FFMPEG_SKIP_DOWNLOAD=ON \
             -DWITH_WIN32UI=OFF -DWITH_DSHOW=OFF -DWITH_MSMF=OFF -DWITH_MSMF_DXVA=OFF \
             -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF \
             -DWITH_OPENEXR=OFF -DWITH_AVIF=OFF -DWITH_JPEGXL=OFF -DWITH_IMGCODEC_GIF=OFF \
             -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_LAPACK=OFF -DWITH_EIGEN=OFF -DWITH_ITT=OFF \
-            -DWITH_QT=OFF -DWITH_OPENGL=OFF -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF \
+            -DWITH_QT=OFF -DWITH_OPENGL=OFF -DWITH_GSTREAMER=OFF \
             -DWITH_OBSENSOR=OFF -DWITH_PROTOBUF=OFF -DWITH_CAROTENE=OFF -DWITH_FLATBUFFERS=OFF \
             -DWITH_KLEIDICV=OFF -DWITH_NDSRVP=OFF -DWITH_HAL_RVV=OFF \
             -DWITH_UNIFONT=OFF -DWITH_ADE=OFF \
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-            -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF 2>&1 | tail -40
+            -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF 2>&1 | tail -50
+          echo "=== FFmpeg detected by cmake? ==="
+          grep -iE "FFMPEG|videoio" bld/CMakeCache.txt | grep -iE "HAVE|FFMPEG_FOUND" | head || true
       - name: reference build (materialize generators) + dump commands
         shell: bash
         run: |
           ninja -C bld -k 0 > bld/ninja-build.log 2>&1 || true
           ninja -C bld -t commands > bld/ninja-cmds.log
+          echo "=== videoio FFmpeg backend active? (cap_ffmpeg must compile) ==="
+          grep -q cap_ffmpeg bld/ninja-cmds.log && echo "cap_ffmpeg: YES ($(grep -c cap_ffmpeg bld/ninja-cmds.log) TUs)" || echo "FATAL: cap_ffmpeg not compiled — FFmpeg videoio backend inactive"
           echo "=== windows cvconfig facts ==="
           grep -E "HAVE_WIN32UI|WIN32|HAVE_OPENCV_HIGHGUI|BUILTIN_BACKEND" bld/cvconfig.h bld/*highgui* 2>/dev/null | head || true
           echo "=== SIMD dispatch TUs present? ==="
@@ -69,7 +98,9 @@ jobs:
         shell: bash
         run: |
           set -eux
-          python tools/compat-opencv/gen_descriptor.py \
+          # FFMPEG_PREFIX: gen_descriptor excludes these include dirs (served by the
+          # compat.ffmpeg dependency) and emits the compat.ffmpeg dep line.
+          FFMPEG_PREFIX="C:/ffprefix" python tools/compat-opencv/gen_descriptor.py \
             "$OPENCV_SRC" bld 5.0.0 \
             b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095 \
             compat.opencv.wingen.lua || echo "gen_descriptor needs windows tweaks — raw artifacts uploaded for local iteration"
