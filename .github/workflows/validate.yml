@@ -11,6 +11,19 @@ on:
   workflow_dispatch:
 
 env:
+  # 0.0.105: `mcpp xpkg parse` now enforces INV-NAME itself (mcpp#278) — a
+  # descriptor whose `namespace` is declared must spell `name` as the
+  # fully-qualified `<namespace>.<short>`. Pinning the lint here means the
+  # grammar check below catches the split form directly, and the in-repo
+  # tests/check_package_name.lua becomes a redundant (cheap, earlier) second
+  # gate rather than the only one. 0.0.105 also narrows bare-name dependency
+  # resolution to the mcpplibs / compat / no-namespace search path — irrelevant
+  # to lint, but it is what the workspace jobs below now build against.
+  #
+  # NOTE: index.toml's min_mcpp/latest_mcpp deliberately stay at 0.0.102. The
+  # floor is a CONSUMER contract; 0.0.105 carries a breaking change (bare names
+  # no longer reach third-party namespaces) and nothing in this index needs
+  # 0.0.105 grammar, so there is no reason to force every consumer forward.
   # 0.0.102: windows command-line ceiling (mcpp#261 — the clang scan rule got
   # its P1689 JSON through shell redirection, which forced a `cmd /c` wrapper
   # and with it cmd.exe's 8191-char limit; clang-scan-deps -o removes both, and
@@ -47,7 +60,7 @@ env:
   # 0.0.94 fixed feature-gated `sources` under `mcpp test` (mcpp#218); 0.0.91
   # added standard = "c++fly" to the resolver grammar, so c++fly descriptors
   # get the lint WARN below, not a hard grammar-parse rejection.
-  MCPP_VERSION: "0.0.102"
+  MCPP_VERSION: "0.0.105"
 
 jobs:
   lint:
@@ -99,6 +112,18 @@ jobs:
             #    and catches in seconds what otherwise fails an hour into the
             #    workspace job.
             if ! lua5.4 tests/check_package_name.lua "$f"; then
+              fail=1
+            fi
+            # 5b. The descriptor must live at the canonical path for its
+            #    identity. The filename is not part of identity (mcpp resolves
+            #    identity-first), but two files CAN carry the same identity
+            #    without anyone noticing — `pkgs/c/capi.lua.lua` and
+            #    `pkgs/m/mcpplibs.capi.lua.lua` were byte-identical duplicates
+            #    of `(mcpplibs.capi, lua)`, and edits to whichever the scan
+            #    reached second were simply dead. Canonical paths also keep a
+            #    package on mcpp's first filename probe instead of a COMPAT
+            #    fallback slated for removal in 1.0.0.
+            if ! lua5.4 tests/check_package_filename.lua "$f"; then
               fail=1
             fi
             # 6. c++fly admission policy (mcpp design 2026-07-14 §11-Q2, v1):
@@ -207,21 +232,21 @@ jobs:
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.102"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.105"   # keep in sync with env.MCPP_VERSION
           - platform: macos
             os: macos-15
             suffix: macosx-arm64
             ext: tar.gz
             mcpp: bin/mcpp
             xlings: registry/bin/xlings
-            mcpp_version: "0.0.102"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.105"   # keep in sync with env.MCPP_VERSION
           - platform: windows
             os: windows-latest
             suffix: windows-x86_64
             ext: zip
             mcpp: bin/mcpp.exe
             xlings: registry/bin/xlings.exe
-            mcpp_version: "0.0.102"   # keep in sync with env.MCPP_VERSION
+            mcpp_version: "0.0.105"   # keep in sync with env.MCPP_VERSION
     env:
       MCPP_EFFECTIVE: ${{ matrix.mcpp_version }}
     steps:

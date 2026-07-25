@@ -18,12 +18,33 @@
 -- the workspace job has already burned an hour. No consumer-side spelling can
 -- work around it; the descriptor is the only place it can be fixed.
 --
--- Upstream: mcpp-community/mcpp#278 (mcpp should either use the declared name
--- or reject the split form in `mcpp xpkg parse`). Until that lands, this lint
--- is the index's guard.
+-- Upstream: mcpp-community/mcpp#278 — LANDED in mcpp 0.0.105, which enforces
+-- the same rule inside `mcpp xpkg parse` (INV-NAME) and again on the install
+-- path. This lint is now a redundant-but-cheap second gate: it runs before the
+-- pinned mcpp is even downloaded, and it keeps the rule readable in-repo.
+--
+-- ── Rule 2: the short segment must be ATOMIC ────────────────────────
+--
+-- Identity is a 2-tuple `(namespace, name)` where `namespace` is a
+-- HIERARCHICAL, dotted path and `name` is a SINGLE atomic segment (mcpp design
+-- 2026-06-20 §4.2). Any depth therefore belongs in `namespace`, never in the
+-- short half of `name`:
+--
+--     ✅ namespace = "mcpplibs.capi", name = "mcpplibs.capi.lua"  → (mcpplibs.capi, lua)
+--     ❌ namespace = "mcpplibs",      name = "mcpplibs.capi.lua"  → declared ns
+--                                                                   disagrees with
+--                                                                   canonical ns
+--
+-- Both spellings survive mcpp's normalizer (it splits the FQN on its LAST dot,
+-- so the second one silently resolves to `(mcpplibs.capi, lua)` — a namespace
+-- the descriptor never declared). That silent disagreement is what this rule
+-- removes: after it, the declared namespace and the canonical one are always
+-- the same string, and `a.b.c` can only ever live in `namespace`.
 --
 -- Zero-namespace packages (the public default-namespace module packages —
--- imgui / ffmpeg / opencv) are unaffected: their bare `name` IS the FQN.
+-- imgui / ffmpeg / opencv) are a deliberate, legal form: their bare `name` IS
+-- the FQN. Rule 2 still applies to them — a dotted name with no declared
+-- namespace would resolve to a namespace that isn't written down anywhere.
 --
 -- Usage: lua5.4 tests/check_package_name.lua <file.lua>
 
@@ -57,6 +78,8 @@ if type(ns) ~= "string" then
     os.exit(fail)
 end
 
+-- ── Rule 1: `name` is the fully-qualified `<namespace>.<short>` ─────
+local short = name
 if ns ~= "" then
     local prefix = ns .. "."
     if name:sub(1, #prefix) ~= prefix then
@@ -67,10 +90,36 @@ if ns ~= "" then
             "consumer request can ever resolve (E_NOT_FOUND at install). " ..
             "See mcpp-community/mcpp#278.",
             ns, name, prefix .. name, name))
+        os.exit(fail)
     elseif #name == #prefix then
         err(string.format(
             "package.name = %q has an empty short name after the %q prefix",
             name, prefix))
+        os.exit(fail)
+    end
+    short = name:sub(#prefix + 1)
+end
+
+-- ── Rule 2: the short segment is a SINGLE atomic segment ───────────
+-- Depth belongs in `namespace`. When the short half carries dots, mcpp's
+-- split-on-last-dot normalizer attributes the package to a namespace the
+-- descriptor never declared — the identity silently disagrees with itself.
+if short:find(".", 1, true) then
+    local canonicalNs = name:sub(1, #name - #short:match("[^.]*$") - 1)
+    if ns == "" then
+        err(string.format(
+            "package.name = %q is dotted but declares no namespace: it would " ..
+            "resolve to namespace %q, which is written down nowhere. Put the " ..
+            "hierarchy in `namespace` — namespace = %q, name = %q.",
+            name, canonicalNs, canonicalNs, name))
+    else
+        err(string.format(
+            "package.name = %q has a non-atomic short name %q under namespace " ..
+            "%q. Identity is (namespace, name) where `namespace` is the dotted " ..
+            "path and `name` is ONE segment, so this resolves to namespace %q " ..
+            "— not the %q you declared. Move the depth into `namespace`: " ..
+            "namespace = %q.",
+            name, short, ns, canonicalNs, ns, canonicalNs))
     end
 end
 

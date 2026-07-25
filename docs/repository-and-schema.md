@@ -13,6 +13,8 @@ tests/examples/<member>/     每库测试工程(workspace 成员;<member> 为包
                              ([target.'cfg(...)'])
   tests/*.cpp                行为断言(独立 main,退出码非 0 即失败)
 tests/check_mirror_urls.lua  lint:GLOBAL+CN 表完整性,以及 CN 指向 mcpp-res
+tests/check_package_name.lua lint:身份规则 1+2(FQN 形式;层级在 namespace,short 原子)
+tests/check_package_filename.lua lint:身份规则 3(描述符位于其身份的规范路径)
 tests/list_cn_urls.lua       抽取 CN url,供 mirror-cn-reachable 使用
 README.md                    索引说明与贡献入口
 .github/workflows/validate.yml   CI:lint / mirror-cn-reachable / workspace(3 平台矩阵)
@@ -36,6 +38,47 @@ tools/compat-ffmpeg/ 等      compat 大包的描述符再生成流水线
 ## 描述符 schema 速查(Form B inline)
 
 `package` 必填字段:`spec`、`namespace`、`name`、`description`、`licenses`、`repo`、`type="package"`、`xpm`、`mcpp`。
+
+### 包身份:`(namespace, name)` 的三条规则
+
+包的身份是一个二元组 —— **`namespace` 是带层级的点分路径,`name` 是单一原子段**(mcpp 设计 2026-06-20 §4.2)。三条规则由 `tests/check_package_name.lua` 与 `tests/check_package_filename.lua` 机械强制,CI lint 秒级拦截。
+
+**规则 1 —— `name` 必须写成完全限定名 `<namespace>.<short>`。**
+
+```lua
+namespace = "chriskohlhoff",
+name      = "chriskohlhoff.asio",   -- ✅
+-- name   = "asio",                 -- ❌ split 形式
+```
+
+split 形式能通过解析、也能过 mcpp 的身份闸门,但**装不上**:xlings/libxpkg 用 `package.name` 的**字面值**给索引建键(`build_index` → `entries[package.name]`),而 mcpp 按消费端写法重建 `<ns>.<short>` 去要 —— 两者永不相交,`E_NOT_FOUND`。这个缺陷曾让三个平台的 workspace job 各跑满 20~58 分钟才炸(mcpp#278,已于 mcpp 0.0.105 在引擎侧修复)。
+
+**规则 2 —— 层级放在 `namespace` 里,`short` 必须是单一原子段。**
+
+```lua
+namespace = "mcpplibs.capi",  name = "mcpplibs.capi.lua",   -- ✅ 身份 = (mcpplibs.capi, lua)
+-- namespace = "mcpplibs",    name = "mcpplibs.capi.lua",   -- ❌ short = "capi.lua"
+```
+
+两种写法都能被 mcpp 的归一化器接受,因为它按**最后一个点**切分 FQN —— 于是第二种会静默解析成 `(mcpplibs.capi, lua)`,一个描述符从未声明过的命名空间。规则 2 消灭这种自相矛盾:**声明的 namespace 与归一化算出的 namespace 永远是同一个字符串。**
+
+**规则 3 —— 描述符放在其身份对应的规范路径上。**
+
+| 命名空间 | 规范路径 |
+|---|---|
+| 空 或 `mcpplibs`(默认命名空间) | `pkgs/<short 首字母>/<short>.lua` |
+| 其他 | `pkgs/<FQN 首字母>/<FQN>.lua` |
+
+```
+(mcpplibs, cmdline)       → pkgs/c/cmdline.lua
+(compat,   zlib)          → pkgs/c/compat.zlib.lua
+(aimol,    tensorvia-cpu) → pkgs/a/aimol.tensorvia-cpu.lua
+(mcpplibs.capi, lua)      → pkgs/m/mcpplibs.capi.lua.lua
+```
+
+文件名**不是**身份的一部分(mcpp 身份优先解析,每个命中都要用文件自身的 `package.{namespace,name}` 复核),非规范命名的文件照样能解析。仍然要钉住它,是因为:① mcpp 的**发现**受候选文件名列表约束而非全索引扫描,规范路径让包命中第一个探测项,而不是落到 1.0.0 计划删除的 COMPAT 回退上;② 两个文件可以承载**同一个身份**而无人察觉 —— `pkgs/c/capi.lua.lua` 与 `pkgs/m/mcpplibs.capi.lua.lua` 曾是 `(mcpplibs.capi, lua)` 的字节级重复,目录扫描先到哪个哪个生效,对另一个的编辑是死的。
+
+**零命名空间包是合法的一等形态。** 公开的默认命名空间模块包(`imgui` / `ffmpeg` / `opencv`)显式声明 `namespace = ""`,其**裸名就是 FQN**,消费端照常写 `imgui = "0.0.3"`。规则 2 对它们同样生效:一个带点却不声明命名空间的 `name` 会解析到一个哪儿都没写下来的命名空间。
 
 `xpm.<linux|macosx|windows>.<裸版本>`:
 
@@ -76,7 +119,10 @@ mcpp 跑 `xpkg parse`(strict:未知键即失败),所以需要更新文法/键的
 - 触发条件:PR(改动 `pkgs/**/*.lua`、`tests/**`、`README.md` 或本 workflow)、push 至 main、nightly cron、手动触发。
 - `env.MCPP_VERSION` 为全部 job 使用的 mcpp 版本,本地验证应与之对齐。
 - `lint`(始终运行):lua 语法 `loadfile(f,'t')`;须含 `spec=`/`name=`/`xpm=`;禁止前导 v 版本;执行
-  `check_mirror_urls.lua`;再用 CI pin 的 mcpp 对每个描述符跑 `mcpp xpkg parse`(strict,未知键即失败)。
+  `check_mirror_urls.lua`;执行 `check_package_name.lua` + `check_package_filename.lua`(身份三规则,见
+  上文「包身份」);再用 CI pin 的 mcpp 对每个描述符跑 `mcpp xpkg parse`(strict,未知键即失败)。
+  自 `MCPP_VERSION = 0.0.105` 起,`mcpp xpkg parse` **自身**也强制规则 1(INV-NAME,mcpp#278),
+  两个 lua lint 因此成为更早、更便宜的冗余闸门,而不再是唯一防线。
 - `mirror-cn-reachable`(始终运行):逐个 `curl` CN url,均须返回 200。
 - `workspace (linux|macos|windows)`:整个测试面就是一个 mcpp workspace,**唯一的构建/运行通道**——
   没有任何 shell 驱动的例外(公开模块包 imgui/ffmpeg/opencv/tinyhttps 也是普通成员,经成员级
@@ -96,6 +142,8 @@ for f in pkgs/*/*.lua; do
   for n in 'spec *=' 'name *=' 'xpm *='; do grep -q "$n" "$f" || { echo "MISS $n $f"; fail=1; }; done
   grep -nqE '\["v[0-9]+|\["[^"]+"\][[:space:]]*=[[:space:]]*"v[0-9]+' "$f" && { echo "LEADING-V $f"; fail=1; }
   lua5.4 tests/check_mirror_urls.lua "$f" >/dev/null 2>&1 || { echo "MIRROR $f"; fail=1; }
+  lua5.4 tests/check_package_name.lua "$f" || fail=1
+  lua5.4 tests/check_package_filename.lua "$f" || fail=1
 done
 [ $fail -eq 0 ] && echo "ALL LINT PASS"
 ```
