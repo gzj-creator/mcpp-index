@@ -7,6 +7,15 @@
 -- build (build-dep `xim:make@latest`) and lays the lib + headers under the
 -- install dir.
 --
+-- HOST REQUIREMENT — perl. `./config` IS a Perl script, and there is no
+-- `xim:perl` to declare as a build dep, so this is the one thing the package
+-- cannot bring itself. CI runners and every mainstream distro ship it; a
+-- stripped container may not. install() probes for it up front and fails with
+-- that sentence rather than letting `./config` die with a shell error nobody
+-- can read. (This is also why mbun's OpenSSL package chose a vendored prebuilt
+-- over a source build; here a source build is the only option that covers both
+-- linux and macOS.)
+--
 -- Platforms:
 --   * linux/macosx — build a fully static libcrypto.a + libssl.a from source
 --     via install() hook (anchor-triggered build, same pattern as compat.openblas).
@@ -14,7 +23,7 @@
 package = {
     spec        = "1",
     namespace   = "compat",
-    name        = "compat.openssl",
+    name        = "openssl",
     description = "OpenSSL — TLS/crypto library (static, install()-driven build)",
     licenses    = {"Apache-2.0"},
     repo        = "https://github.com/openssl/openssl",
@@ -58,8 +67,30 @@ package = {
         include_dirs = { "include" },
         deps         = { },
 
-        -- -lssl must precede -lcrypto (libssl depends on libcrypto).
-        linux  = { ldflags = { "-Llib", "-lssl", "-lcrypto" } },
+        linux = {
+            ldflags = {
+                "-Llib",
+                -- `-l:<archive>` names the file and goes straight to ld, so the
+                -- static archive is what gets linked no matter what else is on
+                -- the search path. Plain `-lssl` asks the driver to *resolve* a
+                -- name, and a resolver prefers a shared object — one stray -L
+                -- ahead of ours (a toolchain sysroot, a distro multiarch dir)
+                -- and the link silently picks up the host libssl.so.3, giving
+                -- the consumer a runtime dependency this package exists to
+                -- avoid. ssl precedes crypto: libssl depends on libcrypto.
+                "-l:libssl.a",
+                "-l:libcrypto.a",
+                -- Static libcrypto's own system deps. Configured `no-dso
+                -- no-engine` (so no dlopen) and glibc >= 2.34 folds both into
+                -- libc, which is why CI links without them — but musl and
+                -- older glibc still need them spelled out.
+                "-ldl",
+                "-lpthread",
+            },
+        },
+        -- macOS: ld64 has no `-l:` spelling. lib/ holds only the .a archives
+        -- this package built, so name resolution has nothing else to find, and
+        -- libSystem already carries dl/pthread.
         macosx = { ldflags = { "-Llib", "-lssl", "-lcrypto" } },
     },
 }
@@ -80,8 +111,24 @@ local function resolve_make()
     return "make"
 end
 
+local function have(tool)
+    return pcall(function()
+        os.exec(string.format("bash -c %s",
+                              sh_quote("command -v " .. tool .. " >/dev/null 2>&1")))
+    end)
+end
+
 local function _install_impl()
-    -- The fetched tarball unpacks to openssl-<ver>/ beside the archive.
+    if not have("perl") then
+        log.error("compat.openssl: `perl` not found on PATH. OpenSSL's "
+               .. "./config is a Perl script and there is no xim:perl build "
+               .. "dep to fall back on — install perl and retry.")
+        return false
+    end
+
+    -- The fetched tarball unpacks to openssl-<ver>/ beside the archive. Every
+    -- command below cd's into srcroot itself, so the process cwd is left alone
+    -- (an os.cd here would break the relative-path fallback on the next line).
     local ifile   = pkginfo.install_file()
     local srcroot = ifile and tostring(ifile):replace(".tar.gz", "")
                             or ("openssl-" .. pkginfo.version())
@@ -89,36 +136,51 @@ local function _install_impl()
         srcroot = "openssl-" .. pkginfo.version()
     end
 
+    -- Build in the extracted source directory with --prefix pointing at a
+    -- clean install directory. Building in-place (prefix == srcroot) makes
+    -- `make install_sw` fail with "cp: source and dest are identical".
+    --
+    -- The prefix is emptied HERE, before the build, so the build log can live
+    -- inside it: a log that a later os.tryrm would delete, or one left in the
+    -- transient srcroot, is gone exactly when a failed build needs reading.
+    -- xim's interface mode swallows subprocess stdout, so this file is the
+    -- only record of what the compiler said.
     local prefix = pkginfo.install_dir()
-    local logf   = path.join(srcroot, "mcpp_openssl_build.log")
-
-    -- Build in the extracted source directory (srcroot) with --prefix
-    -- pointing to the clean install directory (prefix).  This avoids the
-    -- in-source "cp: source and dest are identical" failure that happens
-    -- when prefix == srcroot.
-    os.cd(srcroot)
+    os.tryrm(prefix)
+    os.mkdir(prefix)
+    local logf = path.join(prefix, "mcpp_openssl_build.log")
 
     -- Static-only build: no shared libs, no DSO, no tests, no apps, no engine.
-    -- `./config` auto-detects the target platform (equivalent to
-    -- `perl Configure <auto-detected-target>`).
+    -- `./config` auto-detects the target (equivalent to `perl Configure
+    -- <detected-target>`).
+    --
+    -- --libdir=lib is NOT cosmetic. Left unset, OpenSSL derives the install
+    -- libdir as "lib$target{multilib}" (Configurations/unix-Makefile.tmpl),
+    -- and Configurations/10-main.conf gives linux-x86_64 `multilib => "64"`.
+    -- So on the single most common target the archives land in $prefix/lib64
+    -- while `-Llib` and the check below look at $prefix/lib. linux-aarch64 and
+    -- both darwin64 targets declare no multilib and resolve to plain "lib" —
+    -- which is how a source build can pass on an arm64 Mac and still be broken
+    -- for everyone on x86_64 Linux.
     local make  = resolve_make()
     local jobs  = (os.default_njob and os.default_njob()) or 4
     local flags = "no-shared no-dso no-tests no-apps no-engine"
     os.exec(string.format("bash -c %s", sh_quote(string.format(
-        "cd %s && ./config --prefix=%s %s >> %s 2>&1",
+        "cd %s && ./config --prefix=%s --libdir=lib %s >> %s 2>&1",
         sh_quote(srcroot), sh_quote(prefix), flags, sh_quote(logf)))))
     os.exec(string.format("bash -c %s", sh_quote(string.format(
         "cd %s && %s -j%d >> %s 2>&1",
         sh_quote(srcroot), make, jobs, sh_quote(logf)))))
 
-    -- Install to the clean prefix directory.
-    -- Override RANLIB to use the system ranlib (which supports the macOS
-    -- `-c` flag).  LLVM's llvm-ranlib (injected into PATH by the toolchain)
-    -- rejects `-c`, which causes install_dev to fail.
-    os.tryrm(prefix)
+    -- macOS only: `make install_dev` runs `$(RANLIB) -c`, and the toolchain
+    -- puts llvm-ranlib (which rejects -c) ahead of the system one on PATH.
+    -- Pinning an absolute /usr/bin/ranlib is itself a host assumption, so it
+    -- is confined to the platform that needs it — a Linux container without
+    -- /usr/bin/ranlib would otherwise fail install_sw for no reason.
+    local ranlib = (os.host() == "macosx") and "RANLIB=/usr/bin/ranlib " or ""
     os.exec(string.format("bash -c %s", sh_quote(string.format(
-        "cd %s && %s RANLIB=/usr/bin/ranlib install_sw >> %s 2>&1",
-        sh_quote(srcroot), make, sh_quote(logf)))))
+        "cd %s && %s%s install_sw >> %s 2>&1",
+        sh_quote(srcroot), ranlib, make, sh_quote(logf)))))
 
     -- Verify the build produced the expected archives.
     local libdir   = path.join(prefix, "lib")
@@ -126,7 +188,7 @@ local function _install_impl()
     local ssl_a    = path.join(libdir, "libssl.a")
     if not os.isfile(crypto_a) or not os.isfile(ssl_a) then
         log.error("compat.openssl: build produced no libcrypto.a / libssl.a "
-               .. "(see %s)", logf)
+               .. "under %s (see %s)", libdir, logf)
         return false
     end
 
@@ -139,7 +201,9 @@ local function _install_impl()
 end
 
 function install()
-    -- Windows is deferred.
+    -- Windows is deferred: there is no windows xpm block, so version
+    -- resolution already fails before this point. Kept as a named error in
+    -- case a windows entry is added before this hook learns to build there.
     if os.host() == "windows" then
         log.error("compat.openssl: windows is not yet supported")
         return false
