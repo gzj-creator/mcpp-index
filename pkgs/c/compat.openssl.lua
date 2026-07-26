@@ -246,15 +246,23 @@ local function _install_impl()
         return false
     end
 
-    -- macOS only: `make install_dev` runs `$(RANLIB) -c`, and the toolchain
-    -- puts llvm-ranlib (which rejects -c) ahead of the system one on PATH.
-    -- Pinning an absolute /usr/bin/ranlib is itself a host assumption, so it
-    -- is confined to the platform that needs it — a Linux container without
-    -- /usr/bin/ranlib would otherwise fail install_sw for no reason.
-    local ranlib = (os.host() == "macosx") and "RANLIB=/usr/bin/ranlib " or ""
+    -- macOS only: Configure bakes `RANLIB = ranlib -c` into the Makefile for
+    -- darwin targets, and the `ranlib` that PATH resolves to is the
+    -- toolchain's llvm-ranlib, which rejects `-c` — install_dev then dies
+    -- right after copying libcrypto.a. Point RANLIB at Apple's own, without
+    -- the flag. Confined to the platform that needs it: a Linux container
+    -- without /usr/bin/ranlib should not fail install_sw for no reason.
+    --
+    -- It MUST be spelled `make RANLIB=… install_sw` and not
+    -- `RANLIB=… make install_sw`. The first is a command-line assignment,
+    -- which beats the Makefile's own; the second is merely an environment
+    -- variable, which a Makefile assignment overrides (absent `make -e`), so
+    -- the override silently does nothing and the build fails exactly as if it
+    -- were not there.
+    local ranlib = (os.host() == "macosx") and " RANLIB=/usr/bin/ranlib" or ""
     if not run("make install_sw", logf, string.format(
         "cd %s && %s%s install_sw >> %s 2>&1",
-        sh_quote(srcroot), ranlib, make, sh_quote(logf))) then
+        sh_quote(srcroot), make, ranlib, sh_quote(logf))) then
         return false
     end
 
