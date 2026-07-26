@@ -4,8 +4,14 @@
 --
 -- OpenSSL builds through its own Perl Configure + GNU Make system, which does
 -- not fit mcpp's "list the .c files" model. The xpkg install() hook runs that
--- build (build-dep `xim:make@latest`) and lays the lib + headers under the
--- install dir.
+-- build and lays the lib + headers under the install dir. GNU Make comes from
+-- the `xim:make@latest` build dep on linux; that package has no macOS build,
+-- so there resolve_make() falls back to PATH.
+--
+-- Because that build runs OUTSIDE mcpp's compile rules, it inherits none of
+-- the resolved toolchain's flags — it just calls `cc`. Anything the host
+-- toolchain needs spelled out (macOS SDK, ranlib) has to be handed to it
+-- explicitly; see cc_override() and the install_sw step.
 --
 -- HOST REQUIREMENT — perl. `./config` IS a Perl script, and there is no
 -- `xim:perl` to declare as a build dep, so this is the one thing the package
@@ -41,12 +47,14 @@ package = {
             },
         },
         macosx = {
-            -- xim:make is declared here for the same reason as linux, and NOT
-            -- left to PATH: macOS does ship a /usr/bin/make, but it is GNU Make
-            -- 3.81 (the last GPLv2 release, frozen in 2006), and OpenSSL 3.x's
-            -- generated Makefile does not build with it. compat.openblas
-            -- declares the same dep on macosx.
-            deps = { "xim:make@latest" },
+            -- NO xim:make here: that package is linux-only
+            -- (xim-pkgindex pkgs/m/make.lua declares only an `xpm.linux`
+            -- block), so declaring it fails resolution outright with
+            -- `E_INVALID_INPUT: package 'xim:make@latest' not found` — before
+            -- install() ever runs. compat.openblas declares it on macosx and
+            -- is broken the same way; it goes unnoticed because that package
+            -- is Windows-only in the test suite, so its macOS path is never
+            -- taken. resolve_make() therefore falls back to PATH here.
             ["3.5.1"] = {
                 url = {
                     GLOBAL = "https://github.com/openssl/openssl/releases/download/openssl-3.5.1/openssl-3.5.1.tar.gz",
@@ -112,7 +120,27 @@ local function resolve_make()
         local cand = path.join(mk.bin, "make")
         if os.isfile(cand) then return cand end
     end
+    -- No build dep (macOS): prefer a Homebrew `gmake` when present. macOS's
+    -- own /usr/bin/make is GNU Make 3.81, frozen in 2006.
+    if os.host() == "macosx" and os.isfile("/opt/homebrew/bin/gmake") then
+        return "/opt/homebrew/bin/gmake"
+    end
     return "make"
+end
+
+-- The C compiler OpenSSL's own Makefile should use.
+--
+-- OpenSSL is configured and built outside mcpp's compile rules, so it does not
+-- inherit the resolved toolchain's sysroot flags — it just runs `cc`. On macOS
+-- the toolchain in PATH is xim's llvm, which has no macOS SDK wired up, so
+-- every compile would fail on <stdio.h>. Pin Apple's own driver, which finds
+-- the SDK by itself. Left alone elsewhere: on linux the xim gcc carries its
+-- own payload and is the right compiler to use.
+local function cc_override()
+    if os.host() == "macosx" and os.isfile("/usr/bin/cc") then
+        return "CC=/usr/bin/cc "
+    end
+    return ""
 end
 
 local function have(tool)
@@ -202,12 +230,14 @@ local function _install_impl()
     -- Record which make is in play: "3.81 vs 4.x" is the difference between a
     -- build and a wall of Makefile syntax errors, and it is invisible after
     -- the fact otherwise.
-    run("make --version", logf, string.format(
-        "%s --version >> %s 2>&1 || true", make, sh_quote(logf)))
+    run("build environment", logf, string.format(
+        "{ %s --version; echo \"cc: $(command -v cc)\"; cc --version; " ..
+        "perl --version; } >> %s 2>&1 || true", make, sh_quote(logf)))
 
+    local cc = cc_override()
     if not run("./config", logf, string.format(
-        "cd %s && ./config --prefix=%s --libdir=lib %s >> %s 2>&1",
-        sh_quote(srcroot), sh_quote(prefix), flags, sh_quote(logf))) then
+        "cd %s && %s./config --prefix=%s --libdir=lib %s >> %s 2>&1",
+        sh_quote(srcroot), cc, sh_quote(prefix), flags, sh_quote(logf))) then
         return false
     end
     if not run("make", logf, string.format(

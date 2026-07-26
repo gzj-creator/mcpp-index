@@ -393,3 +393,21 @@ jobs:
             exit $rc
           fi
 
+      # install()-driven packages (openssl, openblas) build through their own
+      # Make/Configure system, whose output xim's interface mode swallows; a
+      # failed hook surfaces only as `E_INTERNAL: [<pkg>] failed:`. Each writes
+      # a log into its install prefix, so on failure surface those — otherwise
+      # diagnosing a platform-specific build break costs a full CI round-trip
+      # per guess.
+      - name: Dump install() build logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          found=0
+          while IFS= read -r log; do
+            found=1
+            echo "::group::$log"
+            tail -80 "$log"
+            echo "::endgroup::"
+          done < <(find tests/examples "$HOME/.mcpp/registry" -name 'mcpp_*_build.log' 2>/dev/null)
+          [ "$found" = 1 ] || echo "no install() build logs found"
