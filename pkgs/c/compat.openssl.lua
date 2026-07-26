@@ -41,8 +41,12 @@ package = {
             },
         },
         macosx = {
-            -- No xim:make dep: macOS ships GNU Make at /usr/bin/make;
-            -- resolve_make() falls back to PATH when the build dep is absent.
+            -- xim:make is declared here for the same reason as linux, and NOT
+            -- left to PATH: macOS does ship a /usr/bin/make, but it is GNU Make
+            -- 3.81 (the last GPLv2 release, frozen in 2006), and OpenSSL 3.x's
+            -- generated Makefile does not build with it. compat.openblas
+            -- declares the same dep on macosx.
+            deps = { "xim:make@latest" },
             ["3.5.1"] = {
                 url = {
                     GLOBAL = "https://github.com/openssl/openssl/releases/download/openssl-3.5.1/openssl-3.5.1.tar.gz",
@@ -118,6 +122,35 @@ local function have(tool)
     end)
 end
 
+-- Last `n` lines of the build log, or nil if it cannot be read.
+local function tail_lines(file, n)
+    local ok, content = pcall(io.readfile, file)
+    if not ok or not content then return nil end
+    local lines = {}
+    for line in (tostring(content) .. "\n"):gmatch("(.-)\n") do
+        lines[#lines + 1] = line
+    end
+    if #lines == 0 then return nil end
+    return table.concat(lines, "\n", math.max(1, #lines - n + 1), #lines)
+end
+
+-- Run one build step, and on failure print the tail of the log with it.
+--
+-- Everything the build says goes to an on-disk log (xim's interface mode
+-- swallows subprocess stdout), and xlings surfaces a failed install() as a
+-- bare `E_INTERNAL: [openssl] failed:` — so without this the only signal a CI
+-- run gives is that something, somewhere, went wrong. The message is passed as
+-- a single pre-formatted argument: log output contains `%` often enough that
+-- handing it to a format string is its own failure mode.
+local function run(step, logf, cmd)
+    local ok, err = pcall(os.exec, string.format("bash -c %s", sh_quote(cmd)))
+    if ok then return true end
+    local tail = tail_lines(logf, 40) or "<log unreadable at " .. tostring(logf) .. ">"
+    log.error("%s", "compat.openssl: " .. step .. " failed (" .. tostring(err)
+                 .. ")\n--- last 40 lines of " .. tostring(logf) .. " ---\n" .. tail)
+    return false
+end
+
 local function _install_impl()
     if not have("perl") then
         log.error("compat.openssl: `perl` not found on PATH. OpenSSL's "
@@ -165,12 +198,23 @@ local function _install_impl()
     local make  = resolve_make()
     local jobs  = (os.default_njob and os.default_njob()) or 4
     local flags = "no-shared no-dso no-tests no-apps no-engine"
-    os.exec(string.format("bash -c %s", sh_quote(string.format(
+
+    -- Record which make is in play: "3.81 vs 4.x" is the difference between a
+    -- build and a wall of Makefile syntax errors, and it is invisible after
+    -- the fact otherwise.
+    run("make --version", logf, string.format(
+        "%s --version >> %s 2>&1 || true", make, sh_quote(logf)))
+
+    if not run("./config", logf, string.format(
         "cd %s && ./config --prefix=%s --libdir=lib %s >> %s 2>&1",
-        sh_quote(srcroot), sh_quote(prefix), flags, sh_quote(logf)))))
-    os.exec(string.format("bash -c %s", sh_quote(string.format(
+        sh_quote(srcroot), sh_quote(prefix), flags, sh_quote(logf))) then
+        return false
+    end
+    if not run("make", logf, string.format(
         "cd %s && %s -j%d >> %s 2>&1",
-        sh_quote(srcroot), make, jobs, sh_quote(logf)))))
+        sh_quote(srcroot), make, jobs, sh_quote(logf))) then
+        return false
+    end
 
     -- macOS only: `make install_dev` runs `$(RANLIB) -c`, and the toolchain
     -- puts llvm-ranlib (which rejects -c) ahead of the system one on PATH.
@@ -178,9 +222,11 @@ local function _install_impl()
     -- is confined to the platform that needs it — a Linux container without
     -- /usr/bin/ranlib would otherwise fail install_sw for no reason.
     local ranlib = (os.host() == "macosx") and "RANLIB=/usr/bin/ranlib " or ""
-    os.exec(string.format("bash -c %s", sh_quote(string.format(
+    if not run("make install_sw", logf, string.format(
         "cd %s && %s%s install_sw >> %s 2>&1",
-        sh_quote(srcroot), ranlib, make, sh_quote(logf)))))
+        sh_quote(srcroot), ranlib, make, sh_quote(logf))) then
+        return false
+    end
 
     -- Verify the build produced the expected archives.
     local libdir   = path.join(prefix, "lib")
