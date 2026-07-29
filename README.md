@@ -61,10 +61,11 @@ mcpp self config --mirror CN   # 切换至国内镜像,默认使用 GLOBAL 上�
 
 细节文档位于 [`docs/`](docs/),供人工与 agent 共同使用:
 
-- [库形态与描述符模板](docs/package-types.md):C 源码、header-only、模块、外部 Form-A 四类模板与样例。
+- [库形态与描述符模板](docs/package-types.md):各类形态的描述符模板与样例,以及最小工程的写法。
 - [CN 镜像闭环](docs/cn-mirror.md):`gtc` 与 gitcode 操作,以及无 `mcpp-res` 权限时的回退方案。
 - [仓库结构与 schema 与 CI](docs/repository-and-schema.md):字段速查、选跑机制与本地 lint。
-- 字段规范见 [mcpp 扩展字段文档](https://github.com/mcpp-community/mcpp/blob/main/docs/04-schema-xpkg-extension.md)。
+- 字段的**权威判定**是 `mcpp xpkg parse`(CI 用的就是它:未知的 mcpp 段字段直接失败,而不是被静默忽略);
+  语义与约束见 mcpp 仓的 [`docs/spec/`](https://github.com/mcpp-community/mcpp/tree/main/docs/spec)。
 
 > 提交 PR 后,`validate` 自动执行 lint 并按改动库选跑对应 workspace 成员(整个测试面是一个 mcpp
 > workspace,公开模块包 `imgui`/`ffmpeg`/`opencv`/`tinyhttps` 也是普通成员——`compat` 的重定向声明在
