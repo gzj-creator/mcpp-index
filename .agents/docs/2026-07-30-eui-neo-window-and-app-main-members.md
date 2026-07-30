@@ -188,10 +188,25 @@ the build+link half of both members on those platforms is asserted by the
 `workspace (macos)` / `workspace (windows)` legs, not locally. Two things are new
 there and worth watching on the first run:
 
-* `glfw_app_main.cpp` has never been compiled on any platform. Its Windows half
-  (`<mmsystem.h>`, `GLFW_EXPOSE_NATIVE_WIN32`, `glfw3native.h`, `timeBeginPeriod`,
-  `MonitorFromWindow`, `EnumDisplaySettingsW`) needs `-lwinmm` and `-luser32`, both
-  already in the descriptor's `windows.ldflags`.
+* `glfw_app_main.cpp` has never been compiled on any platform, so its Windows half
+  is newly exercised. Two descriptor additions came out of auditing it, both
+  Windows-only and both for that TU alone:
+
+  * **`-D_WIN32_WINNT=0x0A00`** (cflags + cxxflags). `core/app/frame_pacing.h`
+    calls `CreateWaitableTimerExW`, which mingw-w64's `winbase.h` and the Windows
+    SDK both guard behind `#if _WIN32_WINNT >= 0x0600`. The header sets no floor of
+    its own and mingw-w64 has historically defaulted as low as `0x502`, so the
+    build would depend on which default the runner's llvm ships. Everything else in
+    the package only reaches pre-Vista APIs, which is why it never came up.
+  * **`-lkernel32`**. `frame_pacing.h` reaches `CreateWaitableTimerExW` /
+    `SetWaitableTimer` / `WaitForSingleObject` / `CloseHandle`. kernel32 is in
+    every sane default lib set, so this is belt-and-braces — but the surrounding
+    comment in the descriptor is precisely about mcpp not inheriting CMake's
+    `CMAKE_C_STANDARD_LIBRARIES`, so naming it is consistent and free.
+
+  `timeBeginPeriod` (winmm) and `MonitorFromWindow` / `GetMonitorInfoW` /
+  `EnumDisplaySettingsW` (user32) were already covered by the existing list;
+  `glfw3native.h` ships in compat.glfw's `include/GLFW/`.
 * these are the first members to link `compat.glfw` off Linux from their **own** code
   rather than through `compat.eui-neo`, which exercises the macOS
   `Cocoa`/`IOKit`/`CoreFoundation` frameworks and the Windows `-lgdi32` from a

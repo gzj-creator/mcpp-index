@@ -309,7 +309,20 @@ package = {
             -- through eui_neo.h), hence both lists; EUI_TRAY_WINAPI only gates
             -- tray_bridge.c, but keeping the pair symmetrical is cheaper than
             -- re-deriving which is which.
-            cflags  = { "-DEUI_TRAY_WINAPI=1", "-DNOMINMAX" },
+            --
+            -- `_WIN32_WINNT` is for the `app-main` feature's TU, which nothing
+            -- compiled until tests/examples/eui-neo-app-main existed:
+            -- core/app/frame_pacing.h calls CreateWaitableTimerExW, and both
+            -- mingw-w64's winbase.h and the Windows SDK guard that declaration
+            -- behind `#if _WIN32_WINNT >= 0x0600`. The header sets no floor of
+            -- its own, so it inherits the toolchain default — mingw-w64 has
+            -- historically defaulted as low as 0x502. Pin the floor rather than
+            -- depend on which default the runner's llvm ships; 0x0A00 is what
+            -- upstream effectively builds against via the MSVC SDK, and a
+            -- command-line define is respected by _mingw.h's `#ifndef` guard.
+            -- The rest of the package only reaches pre-Vista APIs, which is why
+            -- this never came up before.
+            cflags  = { "-DEUI_TRAY_WINAPI=1", "-DNOMINMAX", "-D_WIN32_WINNT=0x0A00" },
             -- Upstream builds at CMAKE_CXX_STANDARD 17; this index's floor is
             -- c++23, and one Windows-only line does not survive the move:
             -- `parseWindowsSelection()` in core/platform/platform.cpp pushes
@@ -326,7 +339,8 @@ package = {
             -- already sits eight lines above and does the right thing); until
             -- then this keeps us on a real upstream release tag rather than a
             -- fork carrying the patch.
-            cxxflags = { "-DEUI_TRAY_WINAPI=1", "-DNOMINMAX", "-fno-char8_t" },
+            cxxflags = { "-DEUI_TRAY_WINAPI=1", "-DNOMINMAX", "-fno-char8_t",
+                         "-D_WIN32_WINNT=0x0A00" },
             -- Upstream lists winmm/urlmon/shell32/user32/imm32/pdh and stops
             -- there, because CMake's MSVC default `CMAKE_C_STANDARD_LIBRARIES`
             -- already drags in kernel32/user32/gdi32/shell32/ole32/comdlg32/…
@@ -337,10 +351,20 @@ package = {
             -- URLDownloadToFileA and ShellExecuteA are covered by the upstream
             -- list.) Like the char8_t break above, this only showed up once the
             -- mcpp#233 collision stopped dropping the TU.
+            --
+            -- kernel32 for the `app-main` TU: core/app/frame_pacing.h reaches
+            -- CreateWaitableTimerExW / SetWaitableTimer / WaitForSingleObject /
+            -- CloseHandle, and glfw_app_main.cpp reaches timeBeginPeriod (winmm,
+            -- already listed) plus MonitorFromWindow / GetMonitorInfoW /
+            -- EnumDisplaySettingsW (user32, already listed). kernel32 is part of
+            -- every sane Windows default lib set, so this is belt-and-braces for
+            -- the one TU in this package that had never been compiled — naming
+            -- it costs nothing and the comment above is precisely about mcpp not
+            -- inheriting CMake's defaults.
             ldflags = {
                 "-lwinmm", "-lurlmon", "-lshell32",
                 "-luser32", "-limm32", "-lpdh", "-lole32",
-                "-lcomdlg32",
+                "-lcomdlg32", "-lkernel32",
             },
         },
 
