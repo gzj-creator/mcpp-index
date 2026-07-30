@@ -39,14 +39,28 @@ per consuming project).
 | `eui-neo-window` | off | hand-written `main()` in the test TU | `core::window`, OpenGL backend, `ScopedRenderBackend`, paced loop, freetype text |
 | `eui-neo-app-main` | **on** | upstream `glfw_app_main.cpp` | the feature's source compiles; `main` really comes from the package |
 
-Both are `[target.'cfg(linux)']`-gated, matching `imgui-window`, `gui-stack` and the
-rest of the X11/GLFW stack in this index. Off-Linux they declare no dependencies and
-the test TU compiles to `int main() { return 0; }`.
+Both build on **all three platforms**, deliberately not `cfg`-gated. `imgui-window`
+and `gui-stack` are linux-only because they pull the X11 packages directly;
+`compat.eui-neo` and `compat.glfw` are not, and the four existing eui-neo members
+already build on every runner. Audited before un-gating: every `core/` header these
+TUs reach (`window_types.h`, `window_backend.h`, `render_backend.h`,
+`primitive_geometry.h`, `render_surface.h`, `platform.h`, `input_state.h`,
+`input_types.h`, `ime_bridge.h`) is platform-clean — no `windows.h`, no Cocoa, no GL
+— and every GLFW entry point used is portable. `core::releaseInputQueue` reaches
+`eui_ime_uninstall_message_filter`, which `ime_bridge.c` defines on all three
+platforms.
 
-Both declare `compat.glfw` **directly** rather than leaning on the transitive edge:
-each calls GLFW itself (`glfwPollEvents`/`glfwWindowShouldClose` in one,
-`glfwSetWindowShouldClose` in the other), because EUI's `core::window` facade
-exposes no event-pump entry point.
+Both add `GLFW_INCLUDE_NONE` before `<GLFW/glfw3.h>`, as `core/input/input_state.h`
+does, so GLFW does not pull a GL header of its own choosing (`GL/gl.h` on Windows,
+the deprecated `OpenGL/gl.h` on macOS). EUI reaches GL through `compat.glad`.
+
+Neither re-declares `compat.glfw`, even though both call GLFW directly (EUI's
+`core::window` facade exposes no event-pump entry point). mcpp propagates a
+transitive dependency's `include_dirs` and link inputs to the consumer, and
+`compat.eui-neo` already depends on `compat.glfw` on every platform. Verified by
+dropping the line and rebuilding both members. This matches the existing
+convention: `eui-neo-sdl2` includes `<SDL.h>` and `<curl/curl.h>`, `eui-neo-vulkan`
+calls `vkEnumerateInstanceVersion`, and neither declares those packages.
 
 ## Why the run is opt-in
 
@@ -126,6 +140,32 @@ by running it:
 Neither is a descriptor bug; both are upstream behaviour a consumer must know, and
 neither was discoverable from the headless members.
 
+## Why the mcpp pin does NOT move
+
+Checked before writing any of this, because the encoding in this descriptor is ugly
+enough to be worth re-testing against a newer client. `MCPP_VERSION` stays at
+**0.0.109**.
+
+The three capabilities that could simplify `compat.eui-neo` all landed **at or before
+0.0.109**, which is already the pin: `default-features = false` (#242, 0.0.98),
+feature→feature forwarding (#243, 0.0.99), obj-path disambiguation (#233/#240,
+0.0.97/0.0.98). The four releases after it — `2026.7.27.1`, `.28.2`, `.29.1`,
+`.29.2` — carry the date-based version scheme, the private-glibc `LD_LIBRARY_PATH`
+fix (#291), 4-segment version parsing, xlings pin hygiene, `[build].defines` before
+the P1689 scan (#297), the musl/MinGW `build.mcpp` host helper (#298), `mcpp add`
+index validation (#307) and SemVer routing (#309). `git log v0.0.109..HEAD` over the
+feature/resolver/plan sources returns nothing that touches feature semantics.
+
+One correction to the descriptor's own comment while re-probing: it claimed "there is
+no `default-features = false` (mcpp#242)". That is wrong — #242 shipped in 0.0.98.
+The accurate statement is that its `seedDefault` gate is **manifest**-side, and a
+`default` feature declared in an xpkg **descriptor** is never seeded at all, so the
+consumer has nothing to switch off. Re-probed by giving the package
+`default = { defines = { "MCPP_PROBE_DEFAULT_APPLIED=1" } }` and checking the macro
+from a plain consumer TU: absent on 0.0.109. The generated-header + forced-`-include`
+encoding therefore stays as it is. Worth filing upstream as a descriptor-side gap in
+#242's coverage.
+
 ## Verification
 
 Local, mcpp **0.0.109** (matching `validate.yml` `env.MCPP_VERSION`), linux-x86_64,
@@ -133,8 +173,8 @@ gcc 16.1.0, X11 display with NVIDIA GL 4.6.
 
 ```
                               headless        MCPP_RUN_WINDOW=1
-eui-neo-window                ok (0.08s)      ok (60 frames, 120 rect / 120 text draws)
-eui-neo-app-main              ok (0.07s)      ok (60 frames, 118 rect / 118 text draws)
+eui-neo-window                ok (0.08s)      ok (60 frames in 0.98s, 120 rect / 120 text draws)
+eui-neo-app-main              ok (0.08s)      ok (60 frames, 118 rect / 118 text draws)
 eui-neo            (existing) ok
 eui-neo-markdown   (existing) ok
 ```
@@ -143,10 +183,25 @@ eui-neo-markdown   (existing) ok
 `check_cross_package_refs.lua` all pass on the touched descriptor. The descriptor
 change is comment-only.
 
+**macOS and Windows are CI-verified only.** There is no runner for either here, so
+the build+link half of both members on those platforms is asserted by the
+`workspace (macos)` / `workspace (windows)` legs, not locally. Two things are new
+there and worth watching on the first run:
+
+* `glfw_app_main.cpp` has never been compiled on any platform. Its Windows half
+  (`<mmsystem.h>`, `GLFW_EXPOSE_NATIVE_WIN32`, `glfw3native.h`, `timeBeginPeriod`,
+  `MonitorFromWindow`, `EnumDisplaySettingsW`) needs `-lwinmm` and `-luser32`, both
+  already in the descriptor's `windows.ldflags`.
+* these are the first members to link `compat.glfw` off Linux from their **own** code
+  rather than through `compat.eui-neo`, which exercises the macOS
+  `Cocoa`/`IOKit`/`CoreFoundation` frameworks and the Windows `-lgdi32` from a
+  consumer link.
+
 ## Not done
 
 * `app-main-sdl2` stays uncovered. It is the same shape against `compat.sdl2`, and
   covering it means a fifth window member for one `sources` line; worth doing if the
   SDL2 window backend gains real users.
-* macOS/Windows only get the build+link half, same as `imgui-window`. The opt-in run
-  has been exercised on linux-x86_64 only.
+* The **opt-in windowed run** has been exercised on linux-x86_64 only. macOS and
+  Windows runners are headless, so they get build+link only — same as
+  `imgui-window`.

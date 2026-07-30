@@ -10,18 +10,24 @@
 # enables `app-main` may not contain any translation unit of its own that
 # defines main(). See the note in pkgs/e/compat.eui-neo.lua.
 #
-# Linux-only (cfg): the whole X11/GLFW/GL stack is linux-gated across this
-# index, matching tests/examples/imgui-window. Off-Linux the member has no
-# dependencies and the test TU compiles to a no-op.
+# ALL THREE PLATFORMS, deliberately not cfg-gated. `app-main` selects upstream's
+# GLFW entry point, which is the default window backend on every platform, and
+# nothing in it is linux-specific — but until this member existed it was compiled
+# on NONE of them, so the windows `-fno-char8_t` / winmm+user32+pdh half of the
+# descriptor and the macOS Cocoa link were both unexercised for that TU.
 #
-# compat.glfw is a DIRECT dependency because the test TU calls
-# glfwSetWindowShouldClose() itself to bound the opt-in window run.
+# compat.glfw is NOT re-declared here even though this TU calls
+# glfwSetWindowShouldClose()/glfwGetCurrentContext() itself to bound the opt-in
+# window run: mcpp propagates a transitive dependency's `include_dirs` and link
+# inputs to the consumer, and compat.eui-neo already depends on compat.glfw on
+# every platform. Same convention as tests/examples/eui-neo-sdl2 and
+# eui-neo-vulkan, which include <SDL.h> / <vulkan/vulkan.h> without re-declaring
+# either.
 #
 # The `compat` index redirect is inherited from the workspace root.
 [package]
 name = "eui-neo-app-main-tests"
 version = "0.1.0"
 
-[target.'cfg(linux)'.dependencies.compat]
+[dependencies.compat]
 eui-neo = { version = "0.5.3", features = ["app-main"] }
-glfw = "3.4"

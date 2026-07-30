@@ -16,8 +16,10 @@
 // The window run needs a display, so it is opt-in via MCPP_RUN_WINDOW=1, exactly
 // as in tests/examples/imgui-window. Headless CI compiles and links the whole
 // loop — which is where a descriptor regression would surface — and returns 0.
-#if defined(__linux__)
-
+//
+// Builds on all three platforms. Every core/ header below is platform-clean (no
+// windows.h, no Cocoa, no GL), and every GLFW entry point used here is portable,
+// so there is no reason to cfg-gate this the way the X11-consuming members are.
 #include <eui_neo.h>
 
 #include "core/input/input_state.h"
@@ -25,6 +27,13 @@
 #include "core/render/render_backend.h"
 #include "core/window/window_backend.h"
 
+// GLFW would otherwise pull a GL header of its own choosing (GL/gl.h on Windows,
+// the deprecated OpenGL/gl.h on macOS). EUI reaches GL through compat.glad, so
+// this TU wants the GLFW API and nothing else — the same thing
+// core/input/input_state.h does before its own include.
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
 #include <GLFW/glfw3.h>
 
 import std;
@@ -304,9 +313,3 @@ int main() {
     std::println("compat.eui-neo[own main]: linked; window run is opt-in (MCPP_RUN_WINDOW=1)");
     return 0;
 }
-
-#else
-
-int main() { return 0; }
-
-#endif

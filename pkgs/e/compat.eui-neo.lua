@@ -174,10 +174,18 @@ package = {
         -- / else-GLFW. Define both halves of either pair and the first one
         -- silently wins, ignoring what the consumer asked for.
         --
-        -- mcpp features are purely additive and there is no
-        -- `default-features = false` (mcpp#242). The obvious encodings all
-        -- fail on 0.0.109, each in its own way — all three verified with
-        -- probes, because each failure is silent:
+        -- mcpp features are purely additive here. `default-features = false`
+        -- does exist (mcpp#242, since 0.0.98) — but its `seedDefault` gate lives
+        -- on the MANIFEST side, and a `default` feature declared in an xpkg
+        -- DESCRIPTOR is never seeded to begin with, so there is nothing for the
+        -- consumer to switch off. Re-probed on 0.0.109 by giving this package a
+        -- `default = { defines = {...} }` and checking the macro from a plain
+        -- consumer: absent. Unchanged in the newest mcpp (2026.7.29.2) — nothing
+        -- has touched the feature system since 0.0.109, so a version bump buys
+        -- no simplification of the encoding below.
+        --
+        -- The obvious encodings all fail on 0.0.109, each in its own way — all
+        -- three verified with probes, because each failure is silent:
         --
         --   * `default = { defines/sources/deps = … }` is INERT. Not
         --     "suppressed when features are named" — never applied at all. A

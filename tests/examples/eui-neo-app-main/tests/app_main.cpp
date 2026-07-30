@@ -22,13 +22,22 @@
 //     point belongs to the package, the gate cannot live in main() — it lives in
 //     a namespace-scope constructor, which runs before it. Headless CI links the
 //     real binary, executes the guard, and exits 0.
-#if defined(__linux__)
-
+//
+// Builds on all three platforms: GLFW is upstream's default window backend
+// everywhere, and nothing below is platform-specific.
 #include <eui_neo.h>
 
 #include "core/render/render_backend.h"
 
+// GLFW would otherwise pull a GL header of its own choosing (GL/gl.h on Windows,
+// the deprecated OpenGL/gl.h on macOS). EUI reaches GL through compat.glad, so
+// this TU wants the GLFW API and nothing else — the same thing
+// core/input/input_state.h does before its own include.
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
 #include <GLFW/glfw3.h>
+
 import std;
 
 namespace {
@@ -162,11 +171,3 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
 }
 
 } // namespace app
-
-#else
-
-// Off-Linux the member declares no dependencies, so there is nothing to link
-// against and no package-supplied main() either — this TU has to provide one.
-int main() { return 0; }
-
-#endif
