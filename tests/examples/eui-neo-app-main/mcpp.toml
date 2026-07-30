@@ -1,0 +1,27 @@
+# compat.eui-neo, `app-main` FEATURE path: the package supplies `int main()`
+# (upstream core/app/glfw_app_main.cpp) and this project deliberately defines
+# none. If the feature stops contributing that source, this member fails to link
+# with `undefined reference to 'main'` — the same assertion shape as
+# tests/examples/catch2-main.
+#
+# This cannot share a project with tests/examples/eui-neo: features are resolved
+# per consuming project, and — because mcpp links a dependency's objects
+# EAGERLY rather than as lazily-selected archive members — a project that
+# enables `app-main` may not contain any translation unit of its own that
+# defines main(). See the note in pkgs/e/compat.eui-neo.lua.
+#
+# Linux-only (cfg): the whole X11/GLFW/GL stack is linux-gated across this
+# index, matching tests/examples/imgui-window. Off-Linux the member has no
+# dependencies and the test TU compiles to a no-op.
+#
+# compat.glfw is a DIRECT dependency because the test TU calls
+# glfwSetWindowShouldClose() itself to bound the opt-in window run.
+#
+# The `compat` index redirect is inherited from the workspace root.
+[package]
+name = "eui-neo-app-main-tests"
+version = "0.1.0"
+
+[target.'cfg(linux)'.dependencies.compat]
+eui-neo = { version = "0.5.3", features = ["app-main"] }
+glfw = "3.4"

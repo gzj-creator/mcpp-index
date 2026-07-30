@@ -259,6 +259,21 @@ package = {
             -- `compat.gtest`'s `main` feature is: a consumer that has its own
             -- main() must not get a second one. A real EUI application enables
             -- this and supplies only app::dslAppConfig() + app::compose().
+            --
+            -- Sharper than "must not get a second one": mcpp links a
+            -- dependency's objects EAGERLY, not as lazily-selected archive
+            -- members, so `glfw_app_main.o` is always in the link rather than
+            -- only when `main` is still undefined. Enabling this feature is
+            -- therefore incompatible with ANY translation unit of the consumer
+            -- that defines main() — including every `mcpp test` TU, which means
+            -- an app-main project cannot carry its own tests/. Verified: adding
+            -- one yields `multiple definition of 'main'` from
+            -- glfw_app_main.cpp:398. tests/examples/eui-neo-app-main is
+            -- structured around that constraint (no main() at all, and its
+            -- opt-in window run is gated in a namespace-scope constructor
+            -- because there is no main() of ours to gate it in);
+            -- tests/examples/eui-neo-window is the same UI with the feature OFF
+            -- and a hand-written loop.
             ["app-main"] = { sources = { "*/core/app/glfw_app_main.cpp" } },
             -- Same gate for the SDL2 window backend. Upstream picks between the
             -- two by EUI_APP_MAIN_SOURCE; here the consumer picks by name, and
