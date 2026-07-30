@@ -183,10 +183,32 @@ eui-neo-markdown   (existing) ok
 `check_cross_package_refs.lua` all pass on the touched descriptor. The descriptor
 change is comment-only.
 
-**macOS and Windows are CI-verified only.** There is no runner for either here, so
-the build+link half of both members on those platforms is asserted by the
-`workspace (macos)` / `workspace (windows)` legs, not locally. Two things are new
-there and worth watching on the first run:
+**macOS and Windows are CI-verified, not locally verified** — there is no runner for
+either here. PR #139, run 30502516910: all three `workspace` legs selected the same
+six members and passed.
+
+```
+selected members: eui-neo-app-main eui-neo-window eui-neo-markdown \
+                  eui-neo-sdl2 eui-neo-vulkan eui-neo
+
+workspace (linux)    pass  12m26s
+workspace (macos)    pass   6m15s
+workspace (windows)  pass   7m50s
+```
+
+The `app-main` line on each leg is the assertion that matters, and it is
+self-proving:
+
+```
+compat.eui-neo[app-main]: linked, main() supplied by the package; window run is opt-in
+```
+
+The test TU defines no `main`, so the binary can only run if `glfw_app_main.o`
+supplied one. Printing that line at all therefore proves the feature's source
+compiled and linked — on Windows and macOS for the first time ever, which is what
+exercises the two additions below.
+
+Two things were new there and were the reason to watch the first run:
 
 * `glfw_app_main.cpp` has never been compiled on any platform, so its Windows half
   is newly exercised. Two descriptor additions came out of auditing it, both
