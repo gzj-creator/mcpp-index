@@ -116,10 +116,11 @@ godot_cpp ... ok (0.12s)
 直接链接跑通 —— 用来提前确认「依赖 .o 全量入链」下没有未解析符号(不需要 `-ldl`/`-lpthread`)。
 CPU 时间约 16 分钟,4 核 runner 上折合 4~5 分钟。
 
-## 6. 后续:模块层 godotengine.godot-cpp
+## 6. 后续:模块层 godotengine.godot-cpp-m
 
 模块包**不**放在本索引里内联(避免索引变重,也避免把 1000 TU 再编一遍):按 Form A 走外部仓
-`mcpplibs/godot-cpp-m`,其 `mcpp.toml` 依赖 `compat.godot-cpp`,提供 `import godot_cpp;`
+`mcpplibs/godot-cpp-m`(版本号**与上游对齐**,即 4.5.0 —— 只做 API 重导出的模块层没有自己的版本值得编,
+消费者从 `godot-cpp = "4.5.0"` 需要知道的就是它对着哪个 Godot),其 `mcpp.toml` 依赖 `compat.godot-cpp`,提供 `import godot_cpp;`
 (单段模块名,与 `#include <godot_cpp/...>` 和库名对应;点号在本索引里留给子模块,如 `opencv.cv`)。
 
 **顺序是硬约束**:模块成员的测试工程只能声明一条 `[indices]`,给 `godotengine`;它的传递依赖

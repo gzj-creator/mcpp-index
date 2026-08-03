@@ -1,4 +1,4 @@
-// Behavioral test for the godotengine.godot-cpp module package: godot-cpp's
+// Behavioral test for the godotengine.godot-cpp-m module package: godot-cpp's
 // API reached with `import godot_cpp;` and no #include at all.
 //
 // The numbers are deliberately the same ones tests/examples/godot-cpp asserts

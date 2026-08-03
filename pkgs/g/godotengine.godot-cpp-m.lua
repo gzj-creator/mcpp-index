@@ -30,11 +30,32 @@
 -- a hard error, not the -Wexpose-global-module-tu-local warning. Extension
 -- code uses Dictionary/Array/TypedArray; the headers still have the rest.
 --
+-- The version TRACKS UPSTREAM rather than counting the wrapper's own
+-- iterations: 4.5.0 is the godot-cpp release it wraps, and the version
+-- compat.godot-cpp carries, so the version tells a consumer the one thing
+-- that matters -- which Godot they are targeting.
+--
+-- The name is `godot-cpp-m`, NOT `godot-cpp`, and that is load-bearing rather
+-- than cosmetic. This package and its own compat.godot-cpp dependency are
+-- always resolved together, and mcpp's installed-package lookup matches on
+-- (name, version) WITHOUT the namespace: with both named `godot-cpp` at the
+-- same version -- which "the version tracks upstream" guarantees -- resolving
+-- this one lands on compat's unpacked directory and fails with "no mcpp.toml
+-- at <verdir>/*/mcpp.toml". Reproducible with a namespace unrelated to either
+-- package: leave a single <anything>-x-godot-cpp/4.5.0 in the store and the
+-- resolution goes to it; remove it and the same descriptor installs fine. The
+-- store DIRECTORIES are namespaced (ns-x-name) -- the lookup is not. Distinct
+-- short names sidestep it, keep the version tracking upstream, and `-m`
+-- matches the repository name. `import godot_cpp;` is unaffected.
+--
+-- CN tag is `v4.5.0-m`: the gitcode mirror repo is shared with the
+-- compat.godot-cpp archives, which already hold the bare-version tags.
+--
 -- Three platforms, one OS-neutral tarball: godot-cpp is portable C++ and
 -- compat.godot-cpp covers all three.
 package = {
     spec        = "1",
-    name        = "godot-cpp",
+    name        = "godot-cpp-m",
     namespace   = "godotengine",
     description = "C++23 module package for godot-cpp (import godot_cpp) — Godot GDExtension API, C++ API unchanged",
     licenses    = {"MIT"},   -- module layer; upstream godot-cpp is MIT as well
@@ -43,30 +64,30 @@ package = {
 
     xpm = {
         linux = {
-            ["0.0.1"] = {
+            ["4.5.0"] = {
                 url = {
-                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v0.0.1.tar.gz",
-                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v0.0.1/godot-cpp-m-0.0.1.tar.gz",
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v4.5.0-m/godot-cpp-m-4.5.0.tar.gz",
                 },
-                sha256 = "5145f1e539b4b42bdb4064a2df0dcb54ffac4d70f88edc42f38bf2304a37a344",
+                sha256 = "d91794f46ec4a74c1f8c61c894efdecceaf54feff103b9b139fd6a8f16e43051",
             },
         },
         macosx = {
-            ["0.0.1"] = {
+            ["4.5.0"] = {
                 url = {
-                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v0.0.1.tar.gz",
-                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v0.0.1/godot-cpp-m-0.0.1.tar.gz",
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v4.5.0-m/godot-cpp-m-4.5.0.tar.gz",
                 },
-                sha256 = "5145f1e539b4b42bdb4064a2df0dcb54ffac4d70f88edc42f38bf2304a37a344",
+                sha256 = "d91794f46ec4a74c1f8c61c894efdecceaf54feff103b9b139fd6a8f16e43051",
             },
         },
         windows = {
-            ["0.0.1"] = {
+            ["4.5.0"] = {
                 url = {
-                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v0.0.1.tar.gz",
-                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v0.0.1/godot-cpp-m-0.0.1.tar.gz",
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v4.5.0-m/godot-cpp-m-4.5.0.tar.gz",
                 },
-                sha256 = "5145f1e539b4b42bdb4064a2df0dcb54ffac4d70f88edc42f38bf2304a37a344",
+                sha256 = "d91794f46ec4a74c1f8c61c894efdecceaf54feff103b9b139fd6a8f16e43051",
             },
         },
     },

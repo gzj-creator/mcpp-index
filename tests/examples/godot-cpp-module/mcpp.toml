@@ -19,6 +19,6 @@ version = "0.1.0"
 
 # Dotted spelling on purpose: CI maps a changed pkgs/<x>/<lib>.lua to the
 # members whose mcpp.toml mentions <lib>, and <lib> here is the whole
-# `godotengine.godot-cpp`.
+# `godotengine.godot-cpp-m`.
 [dependencies]
-godotengine.godot-cpp = "0.0.1"
+godotengine.godot-cpp-m = "4.5.0"
