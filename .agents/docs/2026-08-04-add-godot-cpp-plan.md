@@ -62,6 +62,15 @@ godot-cpp 是 Godot GDExtension 的 C++ 绑定库。表面上属于「C++ 源码
   (mcpp#233/#240)已覆盖这种同包内撞名,本地实测链接正常;这是本包对客户端版本下限的隐含依赖,
   index.toml 现有 floor 远高于它。
 
+### -fPIC
+
+**GDExtension 本身就是一个 shared library**,所以这个静态库的 .o 几乎必然要链进 .so/.dylib。
+不加 `-fPIC` 时链接直接失败(`relocation R_X86_64_32 against '.rodata' can not be used when
+making a shared object`),等于这个包做不了它唯一存在的意义 —— 上游 SCons/CMake 也正是为此传 `-fPIC`。
+故 `linux`/`macosx` 的 `cxxflags` 加 `-fPIC`;windows 不需要(PE 无此区分,clang-cl 只会报 flag 未使用)。
+
+这条是写 examples/summator(真 GDExtension,`kind = "shared"`)时被链接器抓出来的,不是推断的。
+
 ### define 与 feature 评估
 
 `GDEXTENSION` 是上游 cmake 挂在 target INTERFACE 上的 **PUBLIC** define,库与消费者 TU 必须一致,

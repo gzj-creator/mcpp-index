@@ -104,5 +104,15 @@ package = {
             ["gdextension"] = { defines = { "GDEXTENSION" } },
         },
         deps         = { },
+        -- A GDExtension IS a shared library, so this static library's objects
+        -- are almost always linked into one. Without position-independent code
+        -- that link fails outright ("relocation R_X86_64_32 against `.rodata`
+        -- can not be used when making a shared object"), which would leave the
+        -- package unable to do the one thing it exists for -- upstream's own
+        -- SCons and CMake builds pass -fPIC for exactly this reason. Not
+        -- needed on windows: the PE toolchain has no such distinction and
+        -- clang-cl would only report the flag as unused.
+        linux  = { cxxflags = { "-fPIC" } },
+        macosx = { cxxflags = { "-fPIC" } },
     },
 }
