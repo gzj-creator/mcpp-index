@@ -86,6 +86,17 @@ package = {
 
         linux   = { ldflags = { "-lpthread" } },
         -- macOS: libSystem carries pthread.
-        -- windows: no extra import libs; RE2 uses only the CRT here.
+        windows = {
+            -- RE2's util/mutex.h includes <windows.h>, whose min/max
+            -- function-like MACROS then eat RE2's own accessors: regexp.cc
+            -- calls `a->min()` / `a->max()` on Regexp, and the preprocessor
+            -- turns those into "too few arguments provided to function-like
+            -- macro invocation". Upstream's CMake never has to say this
+            -- because a CMake consumer normally sets NOMINMAX project-wide;
+            -- here the package owns its own flags. No extra import libs —
+            -- RE2 uses only the CRT and the Win32 CRITICAL_SECTION already in
+            -- kernel32.
+            cxxflags = { "-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN" },
+        },
     },
 }
