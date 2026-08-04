@@ -412,6 +412,7 @@ local function _install_windows_impl()
     os.mkdir(prefix)
     local logf = path.join(prefix, "mcpp_openssl_build.log")
     local bat  = path.join(prefix, "mcpp_openssl_build.bat")
+    local inner = path.join(prefix, "mcpp_openssl_inner.bat")
 
     local function note(msg)
         local fh = io.open(logf, "a")
@@ -474,6 +475,43 @@ local function _install_windows_impl()
     -- script that "succeeds" having done nothing after the first call.
     local logw  = tostring(logf):gsub("/", "\\")
     local prefw = tostring(prefix):gsub("/", "\\")
+    local innerw = tostring(inner):gsub("/", "\\")
+    io.writefile(inner, table.concat({
+        "@echo off",
+        -- vcvars runs HERE, in a child cmd, so whatever it does to its caller
+        -- cannot reach the outer script.
+        'call "%MCPP_VCVARS%" >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 exit /b 13',
+        'echo [bat] toolset ready >> "' .. logw .. '" 2>&1',
+        'cd /d "' .. srcroot .. '"',
+        'if errorlevel 1 exit /b 14',
+        'where perl >> "' .. logw .. '" 2>&1',
+        'where nmake >> "' .. logw .. '" 2>&1',
+        'echo [bat] configuring >> "' .. logw .. '" 2>&1',
+        'perl Configure VC-WIN64A no-shared no-tests no-apps no-engine no-dso --prefix="' .. prefw .. '" --openssldir="' .. prefw .. '\\ssl" >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 exit /b 20',
+        'echo [bat] building >> "' .. logw .. '" 2>&1',
+        'nmake >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 exit /b 21',
+        'echo [bat] installing >> "' .. logw .. '" 2>&1',
+        'nmake install_sw >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 exit /b 22',
+        "exit /b 0",
+    }, "\r\n") .. "\r\n")
+
+    -- Outer script: find the toolset, then hand the actual build to the inner
+    -- script in a CHILD cmd and record its exit code.
+    --
+    -- The child process is the whole point. Three runs in a row died silently
+    -- right after `call "%VCVARS%"` succeeded — the log even showed
+    -- "[vcvarsall.bat] Environment initialized for: 'x64'" — and then nothing:
+    -- no further echo, no RESULT, exit 0. Visual Studio's developer-prompt
+    -- script terminates the batch that calls it. Running it inside `cmd /c
+    -- <inner.bat>` means it can only take that child down, and the outer
+    -- script still runs to write RESULT. The vcvars path travels by ENVIRONMENT
+    -- VARIABLE rather than as an argument, because a child cmd inherits the
+    -- environment and that avoids another layer of quoting around a path with
+    -- spaces.
     io.writefile(bat, table.concat({
         "@echo off",
         'echo [bat] started >> "' .. logw .. '" 2>&1',
@@ -483,25 +521,11 @@ local function _install_windows_impl()
         'for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"',
         'echo [bat] vspath=%VSPATH% >> "' .. logw .. '" 2>&1',
         'if not defined VSPATH ( echo [bat] RESULT=11 no VC toolset >> "' .. logw .. '" & exit /b 0 )',
-        'set "VCVARS=%VSPATH%\\VC\\Auxiliary\\Build\\vcvars64.bat"',
-        'if not exist "%VCVARS%" ( echo [bat] RESULT=12 no vcvars64 >> "' .. logw .. '" & exit /b 0 )',
-        'call "%VCVARS%" >> "' .. logw .. '" 2>&1',
-        'if errorlevel 1 ( echo [bat] RESULT=13 vcvars failed >> "' .. logw .. '" & exit /b 0 )',
-        'echo [bat] toolset ready >> "' .. logw .. '" 2>&1',
-        'cd /d "' .. srcroot .. '"',
-        'if errorlevel 1 ( echo [bat] RESULT=14 cd failed >> "' .. logw .. '" & exit /b 0 )',
-        'where perl >> "' .. logw .. '" 2>&1',
-        'where nmake >> "' .. logw .. '" 2>&1',
-        'echo [bat] configuring >> "' .. logw .. '" 2>&1',
-        'perl Configure VC-WIN64A no-shared no-tests no-apps no-engine no-dso --prefix="' .. prefw .. '" --openssldir="' .. prefw .. '\\ssl" >> "' .. logw .. '" 2>&1',
-        'if errorlevel 1 ( echo [bat] RESULT=20 Configure failed >> "' .. logw .. '" & exit /b 0 )',
-        'echo [bat] building >> "' .. logw .. '" 2>&1',
-        'nmake >> "' .. logw .. '" 2>&1',
-        'if errorlevel 1 ( echo [bat] RESULT=21 nmake failed >> "' .. logw .. '" & exit /b 0 )',
-        'echo [bat] installing >> "' .. logw .. '" 2>&1',
-        'nmake install_sw >> "' .. logw .. '" 2>&1',
-        'if errorlevel 1 ( echo [bat] RESULT=22 nmake install_sw failed >> "' .. logw .. '" & exit /b 0 )',
-        'echo [bat] RESULT=0 >> "' .. logw .. '" 2>&1',
+        'set "MCPP_VCVARS=%VSPATH%\\VC\\Auxiliary\\Build\\vcvars64.bat"',
+        'if not exist "%MCPP_VCVARS%" ( echo [bat] RESULT=12 no vcvars64 >> "' .. logw .. '" & exit /b 0 )',
+        'echo [bat] handing build to child cmd >> "' .. logw .. '" 2>&1',
+        'cmd /c "' .. innerw .. '"',
+        'echo [bat] RESULT=%errorlevel% >> "' .. logw .. '" 2>&1',
         "exit /b 0",
     }, "\r\n") .. "\r\n")
 
