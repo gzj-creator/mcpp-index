@@ -204,8 +204,16 @@ package = {
         linux = {
             ldflags = { "-lpthread" },
         },
-        -- macOS: libSystem carries pthread.
-        -- windows: protobuf's own TUs need no extra system import libs; the
-        -- Abseil dependency brings -ladvapi32.
+        -- macOS: libSystem carries pthread, and the CoreFoundation framework
+        -- the time zone lookup needs comes in through compat.abseil.
+        windows = {
+            -- Same <windows.h> min/max macro hazard as compat.abseil: protobuf
+            -- reaches <windows.h> through io/io_win32.cc and port.h while using
+            -- std::min/std::max throughout. Upstream's CMake does not spell
+            -- NOMINMAX out because its Abseil dependency's copts already do;
+            -- here each package carries its own compile flags, so it has to be
+            -- stated. No extra import libs: -ladvapi32 arrives with abseil.
+            cxxflags = { "-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN", "-D_CRT_SECURE_NO_WARNINGS" },
+        },
     },
 }

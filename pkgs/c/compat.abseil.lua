@@ -150,11 +150,29 @@ package = {
             -- clock_gettime on pre-2.17 glibc (folded into libc since).
             ldflags = { "-lpthread", "-lrt" },
         },
-        -- macOS: libSystem carries pthread and the clock APIs.
+        macosx = {
+            -- libSystem carries pthread and the clock APIs, but NOT the time
+            -- zone lookup: on Apple platforms cctz's time_zone_lookup.cc reads
+            -- the system zone through CFTimeZoneCopyDefault / CFStringGet* /
+            -- CFRelease, so CoreFoundation has to be on the link line.
+            -- Upstream does the same — absl/time/CMakeLists.txt carries
+            -- `$<$<PLATFORM_ID:Darwin,…>:-Wl,-framework,CoreFoundation>`.
+            -- Without it the package builds and only fails at LINK time in the
+            -- consumer, with six undefined CF* symbols.
+            ldflags = { "-framework", "CoreFoundation" },
+        },
         windows = {
+            -- Upstream's own MSVC copts (absl/copts/GENERATED_AbseilCopts.cmake
+            -- ABSL_MSVC_FLAGS). NOMINMAX is load-bearing, not hygiene:
+            -- <windows.h> defines min/max as function-like MACROS, which turns
+            -- every `std::numeric_limits<time_t>::max()` in absl/time/time.cc
+            -- into "too few arguments provided to function-like macro
+            -- invocation". WIN32_LEAN_AND_MEAN trims the same header down, and
+            -- _CRT_SECURE_NO_WARNINGS silences the CRT deprecation noise.
+            cxxflags = { "-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN", "-D_CRT_SECURE_NO_WARNINGS" },
             -- absl/base/CMakeLists.txt links -ladvapi32 for the Windows
             -- entropy/thread-identity paths.
-            ldflags = { "-ladvapi32" },
+            ldflags  = { "-ladvapi32" },
         },
     },
 }
