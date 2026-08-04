@@ -464,10 +464,14 @@ local function _install_windows_impl()
     -- announces itself into the log BEFORE running, and the script always
     -- exits 0 after recording RESULT=<code>, which is what Lua then reads.
     --
-    -- Written with plain \n: io.writefile on windows already produces CRLF, and
-    -- emitting \r\n here would give \r\r\n — a batch file whose stray CR ends
-    -- up inside `set` values and breaks parsing in ways that look like nothing
-    -- happened at all.
+    -- CRLF line endings are REQUIRED, and this was established the hard way.
+    -- io.writefile writes bytes verbatim (it does not translate \n), and with
+    -- an LF-only batch the run got as far as `call "%VCVARS%"` — the log even
+    -- shows "[vcvarsall.bat] Environment initialized for: 'x64'" — and then
+    -- stopped dead: no further echo, no RESULT, exit 0. cmd reads a batch by
+    -- FILE OFFSET and its bookkeeping assumes CRLF, so on returning from a
+    -- `call` it resumes at the wrong position and hits EOF. The symptom is a
+    -- script that "succeeds" having done nothing after the first call.
     local logw  = tostring(logf):gsub("/", "\\")
     local prefw = tostring(prefix):gsub("/", "\\")
     io.writefile(bat, table.concat({
@@ -499,7 +503,7 @@ local function _install_windows_impl()
         'if errorlevel 1 ( echo [bat] RESULT=22 nmake install_sw failed >> "' .. logw .. '" & exit /b 0 )',
         'echo [bat] RESULT=0 >> "' .. logw .. '" 2>&1',
         "exit /b 0",
-    }, "\n") .. "\n")
+    }, "\r\n") .. "\r\n")
 
     note("wrote " .. bat .. "; running it")
     local batw = tostring(bat):gsub("/", "\\")
