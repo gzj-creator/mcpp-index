@@ -476,12 +476,21 @@ local function _install_windows_impl()
     local logw  = tostring(logf):gsub("/", "\\")
     local prefw = tostring(prefix):gsub("/", "\\")
     local innerw = tostring(inner):gsub("/", "\\")
+    local envdump = path.join(prefix, "mcpp_vsenv.txt")
+    local envw = tostring(envdump):gsub("/", "\\")
     io.writefile(inner, table.concat({
         "@echo off",
-        -- vcvars runs HERE, in a child cmd, so whatever it does to its caller
-        -- cannot reach the outer script.
-        'call "%MCPP_VCVARS%" >> "' .. logw .. '" 2>&1',
-        'if errorlevel 1 exit /b 13',
+        -- vcvars is never `call`ed. Three runs showed the caller vanishing the
+        -- moment it finished — even from a child cmd — so instead it runs in a
+        -- cmd whose only job is to dump the resulting environment, and those
+        -- variables are imported here. This is the standard way build systems
+        -- capture a VS environment, and it does not depend on vcvars returning
+        -- to anyone. Note `&` rather than `&&`: `set` must run whatever exit
+        -- status vcvars leaves behind.
+        'echo [bat] capturing VS environment >> "' .. logw .. '" 2>&1',
+        'cmd /c ""%MCPP_VCVARS%" & set" > "' .. envw .. '" 2>>"' .. logw .. '"',
+        'if not exist "' .. envw .. '" ( echo [bat] no env dump produced >> "' .. logw .. '" & exit /b 13 )',
+        'for /f "usebackq tokens=1* delims==" %%a in ("' .. envw .. '") do set "%%a=%%b"',
         'echo [bat] toolset ready >> "' .. logw .. '" 2>&1',
         'cd /d "' .. srcroot .. '"',
         'if errorlevel 1 exit /b 14',
