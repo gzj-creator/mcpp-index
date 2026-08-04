@@ -447,41 +447,74 @@ local function _install_windows_impl()
         for _, f in ipairs(entries) do note("   " .. tostring(f)) end
         return false
     end
-    srcroot = safe("path.absolute(srcroot)", function() return path.absolute(srcroot) end, srcroot)
+    -- path.absolute() is NOT in the xlings sandbox (verified: "attempt to call
+    -- a nil value"), and it is not needed — pkginfo.install_file() already
+    -- returns an absolute path, so srcroot derived from it is absolute too.
+    -- cmd wants backslashes; the path arrives with both separators mixed.
+    srcroot = tostring(srcroot):gsub("/", "\\")
     note("srcroot=" .. tostring(srcroot))
 
     -- vswhere is installed with every VS 2017+ at a fixed location, and is the
     -- supported way to find the toolset; hardcoding a VS path breaks on the
     -- next release. `-products *` is required or Build Tools-only machines
     -- (which is what CI images often are) report nothing.
+    -- The batch reports through the LOG, not through its exit code: the first
+    -- attempt came back ok=true from os.exec while having produced nothing and
+    -- written nothing, so that channel cannot be trusted here. Every step
+    -- announces itself into the log BEFORE running, and the script always
+    -- exits 0 after recording RESULT=<code>, which is what Lua then reads.
+    --
+    -- Written with plain \n: io.writefile on windows already produces CRLF, and
+    -- emitting \r\n here would give \r\r\n — a batch file whose stray CR ends
+    -- up inside `set` values and breaks parsing in ways that look like nothing
+    -- happened at all.
+    local logw  = tostring(logf):gsub("/", "\\")
+    local prefw = tostring(prefix):gsub("/", "\\")
     io.writefile(bat, table.concat({
         "@echo off",
-        "setlocal",
+        'echo [bat] started >> "' .. logw .. '" 2>&1',
         'set "VSWHERE=%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe"',
-        'if not exist "%VSWHERE%" exit /b 10',
-        'for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * ' ..
-            '-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 ' ..
-            '-property installationPath`) do set "VSPATH=%%i"',
-        'if not defined VSPATH exit /b 11',
+        'echo [bat] vswhere=%VSWHERE% >> "' .. logw .. '" 2>&1',
+        'if not exist "%VSWHERE%" ( echo [bat] RESULT=10 vswhere missing >> "' .. logw .. '" & exit /b 0 )',
+        'for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"',
+        'echo [bat] vspath=%VSPATH% >> "' .. logw .. '" 2>&1',
+        'if not defined VSPATH ( echo [bat] RESULT=11 no VC toolset >> "' .. logw .. '" & exit /b 0 )',
         'set "VCVARS=%VSPATH%\\VC\\Auxiliary\\Build\\vcvars64.bat"',
-        'if not exist "%VCVARS%" exit /b 12',
-        'call "%VCVARS%" >nul || exit /b 13',
-        'cd /d "' .. srcroot .. '" || exit /b 14',
-        '(perl --version && nmake /? ) >> "' .. logf .. '" 2>&1',
-        'perl Configure VC-WIN64A no-shared no-tests no-apps no-engine no-dso ' ..
-            '--prefix="' .. prefix .. '" --openssldir="' .. prefix .. '\\ssl" ' ..
-            '>> "' .. logf .. '" 2>&1 || exit /b 20',
-        'nmake >> "' .. logf .. '" 2>&1 || exit /b 21',
-        'nmake install_sw >> "' .. logf .. '" 2>&1 || exit /b 22',
+        'if not exist "%VCVARS%" ( echo [bat] RESULT=12 no vcvars64 >> "' .. logw .. '" & exit /b 0 )',
+        'call "%VCVARS%" >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 ( echo [bat] RESULT=13 vcvars failed >> "' .. logw .. '" & exit /b 0 )',
+        'echo [bat] toolset ready >> "' .. logw .. '" 2>&1',
+        'cd /d "' .. srcroot .. '"',
+        'if errorlevel 1 ( echo [bat] RESULT=14 cd failed >> "' .. logw .. '" & exit /b 0 )',
+        'where perl >> "' .. logw .. '" 2>&1',
+        'where nmake >> "' .. logw .. '" 2>&1',
+        'echo [bat] configuring >> "' .. logw .. '" 2>&1',
+        'perl Configure VC-WIN64A no-shared no-tests no-apps no-engine no-dso --prefix="' .. prefw .. '" --openssldir="' .. prefw .. '\\ssl" >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 ( echo [bat] RESULT=20 Configure failed >> "' .. logw .. '" & exit /b 0 )',
+        'echo [bat] building >> "' .. logw .. '" 2>&1',
+        'nmake >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 ( echo [bat] RESULT=21 nmake failed >> "' .. logw .. '" & exit /b 0 )',
+        'echo [bat] installing >> "' .. logw .. '" 2>&1',
+        'nmake install_sw >> "' .. logw .. '" 2>&1',
+        'if errorlevel 1 ( echo [bat] RESULT=22 nmake install_sw failed >> "' .. logw .. '" & exit /b 0 )',
+        'echo [bat] RESULT=0 >> "' .. logw .. '" 2>&1',
         "exit /b 0",
-    }, "\r\n") .. "\r\n")
+    }, "\n") .. "\n")
 
     note("wrote " .. bat .. "; running it")
-    local ok, err = pcall(os.exec, string.format('cmd /c "%s"', bat))
-    note("batch returned; ok=" .. tostring(ok) .. " err=" .. tostring(err))
-    if not ok then
+    local batw = tostring(bat):gsub("/", "\\")
+    local ok, err = pcall(os.exec, string.format('cmd /c "%s"', batw))
+    note("os.exec ok=" .. tostring(ok) .. " err=" .. tostring(err)
+         .. " (advisory only -- RESULT= in this log decides)")
+
+    local content = ""
+    local rok, rdata = pcall(io.readfile, logf)
+    if rok and rdata then content = tostring(rdata) end
+    local result = content:match("%[bat%] RESULT=(%d+)")
+    note("batch RESULT=" .. tostring(result))
+    if result ~= "0" then
         local tail = tail_lines(logf, 40) or "<no log; the failure was before the build started>"
-        log.error("%s", "compat.openssl: windows build failed (" .. tostring(err) ..
+        log.error("%s", "compat.openssl: windows build failed (RESULT=" .. tostring(result) ..
                   ")\nexit 10-13 = no Visual Studio C++ toolset found (vswhere/vcvars64), " ..
                   "20-22 = Configure/nmake failed.\nHOST REQUIREMENTS on windows: perl " ..
                   "(Strawberry Perl -- xim:perl has no windows build) and a Visual Studio " ..
