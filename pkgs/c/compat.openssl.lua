@@ -401,19 +401,40 @@ end
 -- and a script on disk is also what a maintainer can re-run by hand after a
 -- failed CI job.
 local function _install_windows_impl()
-    local ifile   = pkginfo.install_file()
-    local srcroot = ifile and tostring(ifile):replace(".tar.gz", "")
-                            or ("openssl-" .. pkginfo.version())
-    if not os.isdir(srcroot) then
-        srcroot = "openssl-" .. pkginfo.version()
-    end
-    srcroot = path.absolute(srcroot)
-
+    -- The log is opened FIRST and appended to at every step, before anything
+    -- that can fail. xlings swallows an install() hook's log.error on windows —
+    -- a failure surfaces only as a bare `E_INTERNAL: [openssl] failed:` — so
+    -- this file is the single channel that survives, and CI's "Dump install()
+    -- build logs on failure" step is what prints it. Without it a windows
+    -- failure is undebuggable from a CI run.
     local prefix = pkginfo.install_dir()
     os.tryrm(prefix)
     os.mkdir(prefix)
     local logf = path.join(prefix, "mcpp_openssl_build.log")
     local bat  = path.join(prefix, "mcpp_openssl_build.bat")
+
+    local function note(msg)
+        local fh = io.open(logf, "a")
+        if fh then fh:write("[mcpp] " .. tostring(msg) .. "\n"); fh:close() end
+    end
+    note("windows install() start; prefix=" .. tostring(prefix))
+    note("cwd=" .. tostring(os.curdir()))
+
+    local ifile = pkginfo.install_file()
+    note("install_file=" .. tostring(ifile))
+    local srcroot = ifile and tostring(ifile):replace(".tar.gz", "")
+                            or ("openssl-" .. pkginfo.version())
+    if not os.isdir(srcroot) then
+        note("srcroot '" .. tostring(srcroot) .. "' is not a dir; falling back")
+        srcroot = "openssl-" .. pkginfo.version()
+    end
+    if not os.isdir(srcroot) then
+        note("FATAL: no source dir found; entries in cwd:")
+        for _, f in ipairs(os.filedirs("*")) do note("   " .. tostring(f)) end
+        return false
+    end
+    srcroot = path.absolute(srcroot)
+    note("srcroot=" .. srcroot)
 
     -- vswhere is installed with every VS 2017+ at a fixed location, and is the
     -- supported way to find the toolset; hardcoding a VS path breaks on the
@@ -441,7 +462,9 @@ local function _install_windows_impl()
         "exit /b 0",
     }, "\r\n") .. "\r\n")
 
+    note("wrote " .. bat .. "; running it")
     local ok, err = pcall(os.exec, string.format('cmd /c "%s"', bat))
+    note("batch returned; ok=" .. tostring(ok) .. " err=" .. tostring(err))
     if not ok then
         local tail = tail_lines(logf, 40) or "<no log; the failure was before the build started>"
         log.error("%s", "compat.openssl: windows build failed (" .. tostring(err) ..
@@ -455,6 +478,12 @@ local function _install_windows_impl()
 
     -- no-shared VC builds land libssl.lib / libcrypto.lib in <prefix>\lib.
     local libdir = path.join(prefix, "lib")
+    note("checking " .. libdir)
+    if os.isdir(libdir) then
+        for _, f in ipairs(os.files(path.join(libdir, "*"))) do note("   lib/ " .. tostring(f)) end
+    else
+        note("   (no lib/ directory was produced)")
+    end
     if not os.isfile(path.join(libdir, "libssl.lib"))
        or not os.isfile(path.join(libdir, "libcrypto.lib")) then
         log.error("compat.openssl: windows build produced no libssl.lib / "
