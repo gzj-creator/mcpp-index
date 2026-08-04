@@ -418,9 +418,22 @@ local function _install_windows_impl()
         if fh then fh:write("[mcpp] " .. tostring(msg) .. "\n"); fh:close() end
     end
     note("windows install() start; prefix=" .. tostring(prefix))
-    note("cwd=" .. tostring(os.curdir()))
 
-    local ifile = pkginfo.install_file()
+    -- Every call below goes through this. The xlings sandbox exposes a SUBSET
+    -- of xmake's Lua API, and calling something outside it kills install()
+    -- silently — the first attempt died on os.curdir() with no message at all,
+    -- leaving only the line above in the log. `safe` turns that class of
+    -- failure into a log line naming the call.
+    local function safe(label, fn, fallback)
+        local ok, res = pcall(fn)
+        if not ok then
+            note("call failed: " .. label .. " -> " .. tostring(res))
+            return fallback
+        end
+        return res
+    end
+
+    local ifile = safe("pkginfo.install_file()", function() return pkginfo.install_file() end)
     note("install_file=" .. tostring(ifile))
     local srcroot = ifile and tostring(ifile):replace(".tar.gz", "")
                             or ("openssl-" .. pkginfo.version())
@@ -429,12 +442,13 @@ local function _install_windows_impl()
         srcroot = "openssl-" .. pkginfo.version()
     end
     if not os.isdir(srcroot) then
-        note("FATAL: no source dir found; entries in cwd:")
-        for _, f in ipairs(os.filedirs("*")) do note("   " .. tostring(f)) end
+        note("FATAL: no source dir found. Entries beside it:")
+        local entries = safe("os.filedirs('*')", function() return os.filedirs("*") end, {})
+        for _, f in ipairs(entries) do note("   " .. tostring(f)) end
         return false
     end
-    srcroot = path.absolute(srcroot)
-    note("srcroot=" .. srcroot)
+    srcroot = safe("path.absolute(srcroot)", function() return path.absolute(srcroot) end, srcroot)
+    note("srcroot=" .. tostring(srcroot))
 
     -- vswhere is installed with every VS 2017+ at a fixed location, and is the
     -- supported way to find the toolset; hardcoding a VS path breaks on the
@@ -480,7 +494,8 @@ local function _install_windows_impl()
     local libdir = path.join(prefix, "lib")
     note("checking " .. libdir)
     if os.isdir(libdir) then
-        for _, f in ipairs(os.files(path.join(libdir, "*"))) do note("   lib/ " .. tostring(f)) end
+        local produced = safe("os.files(lib/*)", function() return os.files(path.join(libdir, "*")) end, {})
+        for _, f in ipairs(produced) do note("   lib/ " .. tostring(f)) end
     else
         note("   (no lib/ directory was produced)")
     end
