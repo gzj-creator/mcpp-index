@@ -48,7 +48,17 @@
 -- short names sidestep it, keep the version tracking upstream, and `-m`
 -- matches the repository name. `import godot_cpp;` is unaffected.
 --
--- CN tag is `v4.5.0-m`: the gitcode mirror repo is shared with the
+-- Versions track upstream godot-cpp one for one, as compat.godot-cpp's do:
+-- 10.0.0-rc1 binds Godot 4.6, 4.5.0 binds Godot 4.5.
+--
+-- 10.0.0-rc1 additionally ships a generated `hashfuncs.hpp` shim -- upstream's
+-- header with `static` dropped from two functions -- without which GCC refuses
+-- the module interface outright ("exposes TU-local entity 'union <unnamed>'",
+-- a hard error no -W flag reaches). It is scoped to the package's own include
+-- path, so compat.godot-cpp still compiles upstream's copy untouched. See the
+-- package README.
+--
+-- CN tags carry an `-m` suffix: the gitcode mirror repo is shared with the
 -- compat.godot-cpp archives, which already hold the bare-version tags.
 --
 -- Three platforms, one OS-neutral tarball: godot-cpp is portable C++ and
@@ -64,6 +74,13 @@ package = {
 
     xpm = {
         linux = {
+            ["10.0.0-rc1"] = {
+                url = {
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v10.0.0-rc1.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v10.0.0-rc1-m/godot-cpp-m-10.0.0-rc1.tar.gz",
+                },
+                sha256 = "895975f32456d821b1297dbd5298ea3e9b925b00557a187927f3dacf2f035220",
+            },
             ["4.5.0"] = {
                 url = {
                     GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
@@ -73,6 +90,13 @@ package = {
             },
         },
         macosx = {
+            ["10.0.0-rc1"] = {
+                url = {
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v10.0.0-rc1.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v10.0.0-rc1-m/godot-cpp-m-10.0.0-rc1.tar.gz",
+                },
+                sha256 = "895975f32456d821b1297dbd5298ea3e9b925b00557a187927f3dacf2f035220",
+            },
             ["4.5.0"] = {
                 url = {
                     GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
@@ -82,6 +106,13 @@ package = {
             },
         },
         windows = {
+            ["10.0.0-rc1"] = {
+                url = {
+                    GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v10.0.0-rc1.tar.gz",
+                    CN     = "https://gitcode.com/mcpp-res/godot-cpp/releases/download/v10.0.0-rc1-m/godot-cpp-m-10.0.0-rc1.tar.gz",
+                },
+                sha256 = "895975f32456d821b1297dbd5298ea3e9b925b00557a187927f3dacf2f035220",
+            },
             ["4.5.0"] = {
                 url = {
                     GLOBAL = "https://github.com/mcpplibs/godot-cpp-m/archive/refs/tags/v4.5.0.tar.gz",
