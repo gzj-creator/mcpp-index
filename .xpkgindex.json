@@ -98,7 +98,6 @@
     ".xpkgindex/plugins/mcpp.py"
   ],
   "docs": {
-    "nav_label": "Docs",
     "landing": "quick-start",
     "entries": [
       {
