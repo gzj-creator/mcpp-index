@@ -2,31 +2,147 @@
   "site": {
     "title": "mcpp Package Index",
     "description": "Modular C++23 packages for the mcpp build tool",
-    "logo": "mcpp Package Index"
+    "logo": "mcpp index"
   },
   "links": {
-    "github": "https://github.com/mcpp-community/mcpp-index",
+    "github": "https://github.com/mcpplibs/mcpp-index",
     "custom": [
-      {"label": "mcpp",          "url": "https://github.com/mcpp-community/mcpp"},
-      {"label": "xpkg V1 spec",  "url": "https://github.com/d2learn/xim-pkgindex/blob/main/docs/V1/xpackage-spec.md"},
-      {"label": "mcpp ext",      "url": "https://github.com/mcpp-community/mcpp/blob/main/docs/04-schema-xpkg-extension.md"}
+      {
+        "label": "mcpp",
+        "url": "https://github.com/mcpp-community/mcpp"
+      },
+      {
+        "label": "xlings",
+        "url": "https://github.com/openxlings/xlings"
+      },
+      {
+        "label": "xpkg V1 spec",
+        "url": "https://github.com/openxlings/xim-pkgindex/blob/main/docs/V1/xpackage-spec.md"
+      },
+      {
+        "label": "mcpp ext",
+        "url": "https://github.com/mcpp-community/mcpp/blob/main/docs/04-schema-xpkg-extension.md"
+      }
     ]
   },
   "about": {
     "project_name": "mcpp",
     "project_url": "https://github.com/mcpp-community/mcpp",
     "description": "Modern C++23 build & package management tool — modules-first, xlings-driven, single-binary install",
-    "maintainers": ["mcpp-community"],
+    "maintainers": [
+      "mcpp-community"
+    ],
     "license": "Apache-2.0"
   },
   "theme": {
-    "primary_color": "#00d4ff",
-    "style": "dark"
+    "accent": "#5b46d6",
+    "style": "auto",
+    "tones": {
+      "module": "#5b46d6",
+      "header": "#52606d",
+      "tool": "#b8690f"
+    },
+    "dark": {
+      "accent": "#9b8bfa",
+      "tones": {
+        "module": "#9b8bfa",
+        "header": "#a7b6c7",
+        "tool": "#e0a260"
+      }
+    }
   },
-  "install_command_template": "mcpp add {name}@{version}",
   "pkgs_dir": "pkgs",
-  "install_commands": {
-    "unix":    "curl -fsSL https://github.com/mcpp-community/mcpp/releases/latest/download/install.sh | bash",
-    "windows": "iwr https://github.com/mcpp-community/mcpp/releases/latest/download/install.sh -useb | bash"
+  "growth": {
+    "total_label": "all packages",
+    "series": [
+      {
+        "label": "import",
+        "facet": "surface",
+        "value": "module",
+        "tone": "module"
+      },
+      {
+        "label": "mcpplibs",
+        "facet": "namespace",
+        "value": "mcpplibs"
+      }
+    ]
+  },
+  "base_url": "https://mcpplibs.github.io/mcpp-index",
+  "languages": [
+    "en",
+    "zh",
+    "zh-Hant"
+  ],
+  "install_command_template": "mcpp add {ref}@{version}",
+  "install": {
+    "primary": {
+      "label": "Install mcpp",
+      "command": "xlings install mcpp -y"
+    },
+    "summary": "Don't have xlings yet?",
+    "os": [
+      {
+        "id": "unix",
+        "os": "Linux / macOS",
+        "command": "curl -fsSL https://d2learn.org/xlings-install.sh | bash"
+      },
+      {
+        "id": "windows",
+        "os": "Windows · PowerShell",
+        "command": "irm https://d2learn.org/xlings-install.ps1.txt | iex"
+      }
+    ]
+  },
+  "plugins": [
+    ".xpkgindex/plugins/mcpp.py"
+  ],
+  "guides": {
+    "nav_label": "Contribute",
+    "entries": [
+      {
+        "slug": "contributing",
+        "title": "Adding a package",
+        "path": "docs/README.md",
+        "translations": {
+          "zh": "docs/zh/README.md"
+        }
+      },
+      {
+        "slug": "package-types",
+        "title": "The four library shapes",
+        "path": "docs/package-types.md",
+        "translations": {
+          "zh": "docs/zh/package-types.md"
+        }
+      },
+      {
+        "slug": "cn-mirror",
+        "title": "CN mirror loop",
+        "path": "docs/cn-mirror.md",
+        "translations": {
+          "zh": "docs/zh/cn-mirror.md"
+        }
+      },
+      {
+        "slug": "repository-and-schema",
+        "title": "Repository & schema",
+        "path": "docs/repository-and-schema.md"
+      }
+    ]
+  },
+  "ecosystem": {
+    "owners": [
+      "mcpplibs",
+      "mcpp-community",
+      "openxlings",
+      "d2learn",
+      "Sunrisepeak"
+    ],
+    "repos": [
+      "mcpp-community/mcpp",
+      "openxlings/xlings",
+      "mcpplibs/mcpp-index"
+    ]
   }
 }
