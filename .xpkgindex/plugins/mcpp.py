@@ -27,11 +27,23 @@ except ModuleNotFoundError:             # pragma: no cover
 # How a package is consumed. This is the axis a C++ user actually browses by,
 # and unlike `categories` (which no descriptor in this repo sets) it is
 # derivable from data that is already there.
+def _t(en: str, zh: str, hant: str) -> Dict[str, str]:
+    """A string the site renders in the reader's language.
+
+    The framework resolves these maps per locale; anything left as a plain
+    string stays as written. Identifiers are deliberately not run through
+    here — `import`, `#include`, `modules`, `targets` are what you actually
+    type or what mcpp.toml actually calls the field, and translating them
+    would break the link to the file the block is describing.
+    """
+    return {"en": en, "zh": zh, "zh-Hant": hant}
+
+
 SURFACES = [
     ("module", "import", "module"),
     ("header", "#include", "header"),
     ("tool", "tool", "tool"),
-    ("external", "upstream mcpp.toml", "neutral"),
+    ("external", _t("upstream mcpp.toml", "上游 mcpp.toml", "上游 mcpp.toml"), "neutral"),
 ]
 
 _IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z_][\w.]*)\s*;", re.M)
@@ -288,7 +300,7 @@ class McppPlugin(Plugin):
         self._scan_examples(ctx)
         if self.examples:
             ctx.meta.set("hero_stats", [
-                {"label": "with examples", "value": len(self.examples)},
+                {"label": _t("with examples", "带示例", "附範例"), "value": len(self.examples)},
             ])
 
     def _scan_examples(self, ctx) -> None:
@@ -387,11 +399,11 @@ class McppPlugin(Plugin):
         if examples:
             ext["examples"] = examples
             ext["example"] = examples[0]
-            pkg.extensions.setdefault("_badges", []).append("✓ example")
+            pkg.extensions.setdefault("_badges", []).append(_t("✓ example", "✓ 有示例", "✓ 有範例"))
 
         mirrors = {m for v in pkg.versions for m in v.mirrors}
         if "CN" in mirrors:
-            pkg.extensions.setdefault("_badges", []).append("CN mirror")
+            pkg.extensions.setdefault("_badges", []).append(_t("CN mirror", "国内镜像", "中國鏡像"))
 
         pkg.extensions["mcpp"] = ext
         # After the examples are attached: the surfaces depend on which
@@ -559,7 +571,7 @@ class McppPlugin(Plugin):
 
     # ------------------------------------------------------------ facets --
     def facets(self) -> List[Facet]:
-        return [Facet(key="surface", label="how you use it", weight=10, values=[
+        return [Facet(key="surface", label=_t("how you use it", "怎么用", "怎麼用"), weight=10, values=[
             FacetValue(key=key, label=label, tone=tone) for key, label, tone in SURFACES
         ])]
 
@@ -608,8 +620,10 @@ class McppPlugin(Plugin):
             lead=lead,
             code=code or placeholder,
             code_muted=not code,
-            note="This descriptor does not name the module or header — "
-                 "open the package for its build details.",
+            note=_t("This descriptor does not name the module or header — "
+                    "open the package for its build details.",
+                    "这个描述符没有写明模块名或头文件 —— 打开包页面看它的构建信息。",
+                    "這個描述符沒有寫明模組名或標頭檔 —— 開啟套件頁面看它的建置資訊。"),
             badges=badges,
         )
 
@@ -627,13 +641,18 @@ class McppPlugin(Plugin):
             code = self._example_code(example["path"])
             if code:
                 blocks.append(Block(
-                    kind="code", title="Usage", weight=20,
+                    kind="code", title=_t("Usage", "用法", "用法"), weight=20,
                     data={
                         "code": code,
-                        "caption": "From this repository's own test project — "
-                                   "built and run by CI, not written for the website.",
-                        "source": f"{example['path']} · project "
-                                  f"tests/examples/{example['project']}",
+                        "caption": _t(
+                            "From this repository's own test project — "
+                            "built and run by CI, not written for the website.",
+                            "来自本仓库自己的测试项目 —— CI 真的编译并运行过,不是为了网站写的。",
+                            "來自本倉庫自己的測試專案 —— CI 真的編譯並執行過,不是為了網站寫的。"),
+                        "source": _t(
+                            f"{example['path']} · project tests/examples/{example['project']}",
+                            f"{example['path']} · 项目 tests/examples/{example['project']}",
+                            f"{example['path']} · 專案 tests/examples/{example['project']}"),
                     }))
 
         if ext.get("form") == "B":
@@ -655,7 +674,8 @@ class McppPlugin(Plugin):
                 items.append({"key": "include dirs",
                               "value": ", ".join(ext["include_dirs"]), "mono": True})
             if items:
-                blocks.append(Block(kind="kv", title="Build", data={"items": items}, weight=30))
+                blocks.append(Block(kind="kv", title=_t("Build", "构建", "建置"),
+                                    data={"items": items}, weight=30))
 
             feats = ext.get("features") or {}
             if feats:
@@ -665,15 +685,19 @@ class McppPlugin(Plugin):
                     if isinstance(fdata, dict):
                         detail = ", ".join(f"{k}" for k in fdata.keys())
                     rows.append([fname, detail])
-                blocks.append(Block(kind="table", title="Features", weight=40,
-                                    data={"head": ["feature", "declares"], "rows": rows}))
+                blocks.append(Block(kind="table", title=_t("Features", "特性", "功能"), weight=40,
+                                    data={"head": [_t("feature", "特性", "功能"),
+                                                   _t("declares", "声明了", "宣告了")],
+                                          "rows": rows}))
 
             if ext.get("sources"):
-                blocks.append(Block(kind="list", title=f"Sources ({len(ext['sources'])})",
+                blocks.append(Block(kind="list", title=_t(f"Sources ({len(ext['sources'])})",
+                                             f"源文件 ({len(ext['sources'])})",
+                                             f"原始檔 ({len(ext['sources'])})"),
                                     collapsed=True, weight=50,
                                     data={"items": ext["sources"]}))
             if ext.get("generated_files"):
-                blocks.append(Block(kind="list", title="Generated files", collapsed=True,
+                blocks.append(Block(kind="list", title=_t("Generated files", "生成的文件", "產生的檔案"), collapsed=True,
                                     weight=60, data={"items": ext["generated_files"]}))
         else:
             upstream = ext.get("upstream") or {}
@@ -694,16 +718,25 @@ class McppPlugin(Plugin):
                 if upstream.get("deps"):
                     items.append({"key": "dependencies",
                                   "value": ", ".join(upstream["deps"]), "mono": True})
-                items.append({"key": "source", "value": ext.get("manifest_url", ""), "mono": True})
-                blocks.append(Block(kind="kv", title="Build · upstream manifest",
+                items.append({"key": _t("source", "来源", "來源"),
+                              "value": ext.get("manifest_url", ""), "mono": True})
+                blocks.append(Block(kind="kv",
+                                    title=_t("Build · upstream manifest",
+                                             "构建 · 上游清单", "建置 · 上游資訊清單"),
                                     data={"items": items}, weight=30))
             else:
+                at = f" at {ext['manifest']}" if ext.get("manifest") else ""
+                at_zh = f"(在 {ext['manifest']})" if ext.get("manifest") else ""
                 blocks.append(Block(
-                    kind="callout", title="Build", weight=30,
-                    data={"text": "Form A package: the upstream archive ships its own "
-                                  "mcpp.toml" + (f" at {ext['manifest']}" if ext.get("manifest") else "")
-                                  + ". Its contents have not been fetched into this build — "
-                                    "run the index's refresh action to pull them in."}))
+                    kind="callout", title=_t("Build", "构建", "建置"), weight=30,
+                    data={"text": _t(
+                        "Form A package: the upstream archive ships its own mcpp.toml"
+                        + at + ". Its contents have not been fetched into this build — "
+                        "run the index's refresh action to pull them in.",
+                        "A 型包:上游压缩包自带 mcpp.toml" + at_zh
+                        + "。本次构建没有抓取它的内容 —— 跑一次索引的刷新动作就能拉进来。",
+                        "A 型套件:上游壓縮檔自帶 mcpp.toml" + at_zh
+                        + "。本次建置沒有抓取它的內容 —— 執行一次索引的重新整理動作就能拉進來。")}))
         return blocks
 
     def _interface_lines(self, pkg, ext: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -721,7 +754,9 @@ class McppPlugin(Plugin):
             for code in codes:
                 label, tone = _line_kind(str(code))
                 out.append({"code": str(code), "label": label, "tone": tone,
-                            "note": "Curated in .xpkgindex/interfaces.json."})
+                            "note": _t("Curated in .xpkgindex/interfaces.json.",
+                                       "人工维护在 .xpkgindex/interfaces.json。",
+                                       "人工維護在 .xpkgindex/interfaces.json。")})
             return out
 
         lines: List[Dict[str, str]] = []
@@ -729,10 +764,14 @@ class McppPlugin(Plugin):
         note = ""
         source = (ext.get("upstream") or {}).get("modules_source")
         if modules and source == "description":
-            note = "Module name taken from the upstream manifest's own description."
+            note = _t("Module name taken from the upstream manifest's own description.",
+                      "模块名取自上游清单自己的 description。",
+                      "模組名取自上游資訊清單自己的 description。")
         elif modules and source == "export":
             path = (ext.get("upstream") or {}).get("modules_path", "")
-            note = f"Module name read from the upstream `export module` declaration in {path}."
+            note = _t(f"Module name read from the upstream `export module` declaration in {path}.",
+                      f"模块名读自上游 {path} 里的 `export module` 声明。",
+                      f"模組名讀自上游 {path} 裡的 `export module` 宣告。")
 
         # A Form A manifest often never names its module, but a test project
         # that consumes the package writes the import for real — and CI
@@ -741,8 +780,10 @@ class McppPlugin(Plugin):
             hit = self._scan_examples_for(ext, pkg.identity.name, self._import_line)
             if hit:
                 modules = [hit]
-                note = ("Module name taken from this index's own test project "
-                        "for the package.")
+                note = _t("Module name taken from this index's own test project "
+                          "for the package.",
+                          "模块名取自本索引给这个包写的测试项目。",
+                          "模組名取自本索引給這個套件寫的測試專案。")
 
         if modules:
             lines.append({"code": f"import {modules[0]};", "label": "import",

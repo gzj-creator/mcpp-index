@@ -1,11 +1,20 @@
 {
   "site": {
-    "title": "mcpp Package Index",
-    "description": "Modular C++23 packages for the mcpp build tool",
+    "title": {
+      "en": "mcpp Package Index",
+      "zh": "mcpp 包索引",
+      "zh-Hant": "mcpp 套件索引"
+    },
+    "description": {
+      "en": "Modular C++23 packages for the mcpp build tool",
+      "zh": "面向 mcpp 构建工具的模块化 C++23 包",
+      "zh-Hant": "給 mcpp 建置工具使用的模組化 C++23 套件"
+    },
     "logo": "mcpp index"
   },
   "links": {
     "github": "https://github.com/mcpplibs/mcpp-index",
+    "website": "https://mcpp.d2learn.org",
     "custom": [
       {
         "label": "mcpp",
@@ -16,11 +25,19 @@
         "url": "https://github.com/openxlings/xlings"
       },
       {
-        "label": "xpkg V1 spec",
+        "label": {
+          "en": "xpkg V1 spec",
+          "zh": "xpkg V1 规范",
+          "zh-Hant": "xpkg V1 規範"
+        },
         "url": "https://github.com/openxlings/xim-pkgindex/blob/main/docs/V1/xpackage-spec.md"
       },
       {
-        "label": "mcpp ext",
+        "label": {
+          "en": "mcpp ext",
+          "zh": "mcpp 扩展字段",
+          "zh-Hant": "mcpp 擴充欄位"
+        },
         "url": "https://github.com/mcpp-community/mcpp/blob/main/docs/04-schema-xpkg-extension.md"
       }
     ]
@@ -28,7 +45,11 @@
   "about": {
     "project_name": "mcpp",
     "project_url": "https://github.com/mcpp-community/mcpp",
-    "description": "Modern C++23 build & package management tool — modules-first, xlings-driven, single-binary install",
+    "description": {
+      "en": "Modern C++23 build & package management tool — modules-first, xlings-driven, single-binary install",
+      "zh": "现代 C++23 构建与包管理工具 —— 模块优先、由 xlings 驱动、单文件安装",
+      "zh-Hant": "現代 C++23 建置與套件管理工具 —— 模組優先、由 xlings 驅動、單一執行檔安裝"
+    },
     "maintainers": [
       "mcpp-community"
     ],
@@ -53,7 +74,11 @@
   },
   "pkgs_dir": "pkgs",
   "growth": {
-    "total_label": "all packages",
+    "total_label": {
+      "en": "all packages",
+      "zh": "全部包",
+      "zh-Hant": "全部套件"
+    },
     "series": [
       {
         "label": "import",
@@ -77,10 +102,18 @@
   "install_command_template": "mcpp add {ref}@{version}",
   "install": {
     "primary": {
-      "label": "Install mcpp",
+      "label": {
+        "en": "Install mcpp",
+        "zh": "安装 mcpp",
+        "zh-Hant": "安裝 mcpp"
+      },
       "command": "xlings install mcpp -y"
     },
-    "summary": "Don't have xlings yet?",
+    "summary": {
+      "en": "Don't have xlings yet?",
+      "zh": "还没装 xlings?",
+      "zh-Hant": "還沒安裝 xlings?"
+    },
     "os": [
       {
         "id": "unix",
@@ -102,7 +135,11 @@
     "entries": [
       {
         "slug": "quick-start",
-        "title": "Quick start",
+        "title": {
+          "en": "Quick start",
+          "zh": "快速开始",
+          "zh-Hant": "快速開始"
+        },
         "path": "docs/quick-start.md",
         "translations": {
           "zh": "docs/zh/quick-start.md"
@@ -110,7 +147,11 @@
       },
       {
         "slug": "contributing",
-        "title": "Adding a package",
+        "title": {
+          "en": "Adding a package",
+          "zh": "新增一个包",
+          "zh-Hant": "新增一個套件"
+        },
         "path": "docs/README.md",
         "translations": {
           "zh": "docs/zh/README.md"
@@ -118,7 +159,11 @@
       },
       {
         "slug": "package-types",
-        "title": "The four library shapes",
+        "title": {
+          "en": "The four library shapes",
+          "zh": "四种库形态",
+          "zh-Hant": "四種函式庫形態"
+        },
         "path": "docs/package-types.md",
         "translations": {
           "zh": "docs/zh/package-types.md"
@@ -126,7 +171,11 @@
       },
       {
         "slug": "cn-mirror",
-        "title": "CN mirror loop",
+        "title": {
+          "en": "CN mirror loop",
+          "zh": "国内镜像流程",
+          "zh-Hant": "中國鏡像流程"
+        },
         "path": "docs/cn-mirror.md",
         "translations": {
           "zh": "docs/zh/cn-mirror.md"
@@ -139,15 +188,31 @@
       }
     ],
     "cta": {
-      "eyebrow": "New here?",
-      "title": "Quick start",
-      "description": "Install mcpp, create a project, add a library from this index, run it.",
+      "eyebrow": {
+        "en": "New here?",
+        "zh": "第一次用?",
+        "zh-Hant": "第一次用?"
+      },
+      "title": {
+        "en": "Quick start",
+        "zh": "快速开始",
+        "zh-Hant": "快速開始"
+      },
+      "description": {
+        "en": "Install mcpp, create a project, add a library from this index, run it.",
+        "zh": "装好 mcpp,建个项目,从索引里加一个库,跑起来。",
+        "zh-Hant": "裝好 mcpp,建個專案,從索引裡加一個函式庫,跑起來。"
+      },
       "lines": [
         "mcpp new hello",
         "mcpp add nlohmann.json@3.12.0",
         "mcpp run"
       ],
-      "action": "Read the guide"
+      "action": {
+        "en": "Read the guide",
+        "zh": "看指南",
+        "zh-Hant": "看指南"
+      }
     }
   },
   "ecosystem": {
