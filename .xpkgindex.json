@@ -97,9 +97,18 @@
   "plugins": [
     ".xpkgindex/plugins/mcpp.py"
   ],
-  "guides": {
-    "nav_label": "Contribute",
+  "docs": {
+    "nav_label": "Docs",
+    "landing": "quick-start",
     "entries": [
+      {
+        "slug": "quick-start",
+        "title": "Quick start",
+        "path": "docs/quick-start.md",
+        "translations": {
+          "zh": "docs/zh/quick-start.md"
+        }
+      },
       {
         "slug": "contributing",
         "title": "Adding a package",
@@ -129,7 +138,18 @@
         "title": "Repository & schema",
         "path": "docs/repository-and-schema.md"
       }
-    ]
+    ],
+    "cta": {
+      "eyebrow": "New here?",
+      "title": "Quick start",
+      "description": "Install mcpp, create a project, add a library from this index, run it.",
+      "lines": [
+        "mcpp new hello",
+        "mcpp add nlohmann.json@3.12.0",
+        "mcpp run"
+      ],
+      "action": "Read the guide"
+    }
   },
   "ecosystem": {
     "owners": [
