@@ -127,7 +127,19 @@ env:
   # index.toml 的 min_mcpp **不动**。两个会撞的 compat 邻居都是 Form B,所以旧客户端
   # 撞上时是响亮报错而不是静默用错包;下限是一道让整个索引对旧客户端失效的闸门
   # (mcpp#349),只该在描述符真的读不动时抬。这里读得动,差的是解析得对。
-  MCPP_VERSION: "2026.8.6.2"
+  #
+  # 2026.8.8.2 是本 PR 的**前置**,不是顺手升级。
+  #
+  # `compat.glx-runtime` 依赖 mesa,mesa 声明 `xim:glibc@>=2.38`;下限被任何更高
+  # 版本满足,于是安装图形栈会在既有 glibc 旁边**再装一个**。2026.8.8.2 之前的
+  # mcpp 用 `readdir` 的第一项来解析「那个 glibc payload」,编译侧与产物的
+  # interpreter 因此可以指向不同版本 —— 这正是 #179 落地后 `asio-module` 和
+  # `core` 变红、并导致整份改动被 #180 revert 的原因。
+  #
+  # 用早于 2026.8.8.2 的 mcpp 重新落地这份改动,就是在仍会犯这个错的引擎上复现
+  # 事故条件。tests/check_graphics_install_side_effects.sh 也需要它 —— 该测试在
+  # 更旧的 mcpp 上失败是**有意的**。
+  MCPP_VERSION: "2026.8.8.2"
 
 jobs:
   lint:
@@ -507,6 +519,41 @@ jobs:
           } > /tmp/plan.json
           echo "plan=$(cat /tmp/plan.json)" >> "$GITHUB_OUTPUT"
           jq . /tmp/plan.json
+
+  # Installing the graphics stack must not change what UNRELATED members link
+  # against. This is the check #179 did not have: every test in this repo asks
+  # about its own package, so nothing asked whether installing one changes
+  # things for everyone else -- and `asio-module` / `core` went red on a
+  # change that never touched them.
+  #
+  # Its own job, on Linux, because it needs a real toolchain and a home it can
+  # watch payloads appear in. It reports INCONCLUSIVE (and fails) rather than
+  # green whenever its preconditions do not hold; see the script.
+  graphics-side-effects:
+    name: "graphics install: no side effects on unrelated members"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download mcpp
+        shell: bash
+        env:
+          MCPP_ARCHIVE: mcpp-${{ env.MCPP_VERSION }}-linux-x86_64.tar.gz
+          MCPP_ROOT: mcpp-${{ env.MCPP_VERSION }}-linux-x86_64
+        run: |
+          curl -L -fsS -o "$MCPP_ARCHIVE" \
+            "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/${MCPP_ARCHIVE}"
+          tar -xzf "$MCPP_ARCHIVE"
+          root="$PWD/$MCPP_ROOT"
+          mkdir -p "$HOME/.mcpp/registry"
+          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
+          echo "MCPP=$root/bin/mcpp" >> "$GITHUB_ENV"
+          echo "MCPP_VENDORED_XLINGS=$root/registry/bin/xlings" >> "$GITHUB_ENV"
+      - name: Side-effect check
+        shell: bash
+        run: |
+          "$MCPP" self config --mirror GLOBAL 2>/dev/null || true
+          bash tests/check_graphics_install_side_effects.sh
 
   workspace:
     # The shard suffix appears only when the platform is actually split.
