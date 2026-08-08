@@ -545,9 +545,16 @@ jobs:
             "https://github.com/mcpp-community/mcpp/releases/download/v${MCPP_VERSION}/${MCPP_ARCHIVE}"
           tar -xzf "$MCPP_ARCHIVE"
           root="$PWD/$MCPP_ROOT"
-          mkdir -p "$HOME/.mcpp/registry"
-          cp -a "$root/registry/." "$HOME/.mcpp/registry/"
+          # MCPP_HOME is the tarball root, not ~/.mcpp.
+          #
+          # A released mcpp is self-contained: it resolves its registry from
+          # beside its own executable. Copying the payload tree into ~/.mcpp
+          # and pointing MCPP_HOME there therefore watches one home while the
+          # build uses another -- which this check detects and refuses to call
+          # green (it did, on the first run). Aligning them is the fix; the
+          # check was right.
           echo "MCPP=$root/bin/mcpp" >> "$GITHUB_ENV"
+          echo "MCPP_HOME=$root" >> "$GITHUB_ENV"
           echo "MCPP_VENDORED_XLINGS=$root/registry/bin/xlings" >> "$GITHUB_ENV"
       - name: Side-effect check
         shell: bash
