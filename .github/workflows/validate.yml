@@ -380,6 +380,18 @@ jobs:
               # changes with it and the rule above selects the right members.
               # So a tools/ edit alone selects nothing rather than forcing a
               # full workspace rebuild.
+              # The timing table decides how work is DISTRIBUTED across
+              # shards, never what gets built — no member's result can change
+              # because a measured number moved. It used to fall through to
+              # the `*)` catch-all below and force a full run, which is the
+              # most expensive way in this workflow to test nothing: the next
+              # full run reads the new numbers anyway.
+              #
+              # Note this makes the file invisible to CI. A malformed row is
+              # then silent, and `plan_shards` prices anything it cannot parse
+              # at the median — the exact failure mode that overflowed a shard
+              # here. Guard it in `lint` if that ever bites.
+              tests/member-timings.tsv) : ;;
               *.md|docs/*|.agents/*|.github/*|tools/*) : ;;
               *) full "unclassified change: $f" ;;
             esac
