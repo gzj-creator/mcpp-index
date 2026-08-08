@@ -441,18 +441,31 @@ jobs:
           # platform and take one shard per ~70 minutes, which leaves ~20
           # minutes of headroom under the 90-minute cap for a cold cache.
           #
-          # The caps are where runner concurrency comes back in: linux 3 (the
-          # measured concurrency — a 4th shard would queue), macOS 2, windows
-          # 2. Past those, more shards buy fit that is already there and pay
-          # another checkout + mcpp download + cache restore.
+          # The caps are where runner concurrency comes back in: linux 4,
+          # macOS 2, windows 2. Past those, more shards buy fit that is
+          # already there and pay another checkout + mcpp download + cache
+          # restore.
           #
-          # Full run, from the table: linux 13570s over 3 -> ~75min/shard
-          # (observed slowest 77), macOS 6922s over 2 -> ~57, windows 8043s
-          # over 2 -> ~67. linux is the tight one — its cap binds before the
-          # ~70-minute target does, so it is the first place to look if a
-          # cold full run starts brushing 90 again. The levers, in order:
-          # raise the linux cap to 4 (costs a queued runner), then the job
+          # linux was 3 — "the measured concurrency, a 4th shard would queue".
+          # That cap outlived its premise twice over: the workspace grew, and
+          # the second toolchain leg means linux emits 2 x N jobs, so it
+          # queues at any N. It is now 4, which is what the formula asks for.
+          #
+          # Full run, from the table: linux 15891s over 4 -> ~74min slowest
+          # shard, macOS 6922s over 2 -> ~57, windows 8043s over 2 -> ~67.
+          #
+          # linux is still the tight one, and the number to watch is the
+          # SLOWEST shard against the 90-minute job cap, not the average.
+          # Simulated on the current table: 3-way 98min, 4-way 74, 5-way 60.
+          # The levers, in order: raise the linux cap to 5, then the job
           # timeout.
+          #
+          # Keep tests/member-timings.tsv fresh — that is not housekeeping. An
+          # untimed member is priced at the MEDIAN, so a heavy newcomer packs
+          # like a trivial one. `mysql-connector-cpp` (881s) and
+          # `libmysqlclient` (329s) landed on shard 0 next to grpc-codegen
+          # exactly that way and pushed it past the cap, and the stale table
+          # then hid the overflow by under-counting the total.
           shards_for() {   # platform cap -> shard count
             local secs
             secs=$(XPLAT="$1" lua5.4 -e '
@@ -472,7 +485,20 @@ jobs:
             echo "$1 work: ${secs}s (measured) -> $n shard(s)" >&2
             echo "$n"
           }
-          ln=$(shards_for linux 3)
+          # linux 3 -> 4. The cap was the binding constraint, not the ~70min
+          # target: `secs / 4200 + 1` asks for 4 on the refreshed table
+          # (15891s) and has been getting clamped back to 3. Simulated on that
+          # table, slowest shard: 3-way 98min (OVER the 90min job cap — and
+          # `linux default 0/3` was in fact cancelled at 90min on run
+          # 31266814148), 4-way 74min, 5-way 60min. 4 is the formula's own
+          # answer and leaves 16 minutes for a cold cache; 5 is there if that
+          # stops being enough.
+          #
+          # This does cross the concurrency line the old comment drew: with two
+          # toolchain legs linux now emits 8 jobs against a measured runner
+          # concurrency of 3, so shards queue. Queuing is the right trade —
+          # back-to-back shards still finish, a shard over the cap does not.
+          ln=$(shards_for linux 4)
           mn=$(shards_for macos 2)
           wn=$(shards_for windows 2)
           {
