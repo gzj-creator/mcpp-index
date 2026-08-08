@@ -616,6 +616,32 @@ jobs:
           key: ${{ env.REGISTRY_CACHE_KEY }}
           restore-keys: |
             mcpp-registry-${{ runner.os }}-${{ env.MCPP_VERSION }}-
+      # Host tools built from source (protoc, grpc_cpp_plugin, …).
+      #
+      # Measured on the run that added grpc-codegen: 636s to build protoc and
+      # 660s to build grpc_cpp_plugin — 1296s of a 3363s member, repeated in
+      # every job of every run, because the registry cache above covers
+      # ~/.mcpp/registry and the tool store lives in ~/.mcpp/build-cache.
+      # `protobuf-protoc` and `grpc-module` build the SAME protoc, so a full
+      # run pays for it several times over.
+      #
+      # A coarse rolling key is safe here, which is why this is cheap. The
+      # store is content-addressed by `<pkg>@<version>/<hash>` and mcpp
+      # validates an entry FIELD BY FIELD against the recorded entry.json
+      # (epoch, target, host triple, compiler identity, profile, features,
+      # transitive dependency closure). A stale entry is not used; it is
+      # rebuilt. The worst case of a cache miss-match is the status quo.
+      #
+      # Deliberately NOT build-cache/v1/pkg: 6.0 GB measured locally against
+      # Actions' 10 GB per-repo budget, which would evict the registry cache
+      # this job needs more. The tool store is 116 MB.
+      - name: Cache host tool store
+        uses: actions/cache@v4
+        with:
+          path: ~/.mcpp/build-cache/v1/tool
+          key: mcpp-toolstore-${{ runner.os }}-${{ env.MCPP_VERSION }}-${{ github.run_id }}-${{ matrix.platform }}-${{ matrix.shard }}
+          restore-keys: |
+            mcpp-toolstore-${{ runner.os }}-${{ env.MCPP_VERSION }}-
       - name: Download mcpp
         shell: bash
         env:
@@ -631,6 +657,21 @@ jobs:
           root="$PWD/$MCPP_ROOT"
           mkdir -p "$HOME/.mcpp/registry"
           cp -a "$root/registry/." "$HOME/.mcpp/registry/"
+          # Point mcpp AT the home the caches above cover.
+          #
+          # Without this the copy above is one-way scenery: a released mcpp is
+          # self-contained and resolves its registry from beside its own
+          # executable, so every build used <tarball>/registry while the cache
+          # restored, and saved, ~/.mcpp/registry. Proof from the run that
+          # added grpc-codegen: abseil compiled from
+          # `<tarball>/registry/data/xpkgs/compat-x-abseil/...`, and
+          # xim:glibc@2.44 / xim:python@3.13.12 were downloaded again on a job
+          # that reported a registry cache HIT.
+          #
+          # With MCPP_HOME set, the restored registry is the one in play — so
+          # payloads stop being re-downloaded per job, and the tool store cache
+          # below lands where the build looks for it.
+          echo "MCPP_HOME=$HOME/.mcpp" >> "$GITHUB_ENV"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             echo "MCPP=$(cygpath -m "$root/${{ matrix.mcpp }}")" >> "$GITHUB_ENV"
             echo "MCPP_VENDORED_XLINGS=$(cygpath -m "$root/${{ matrix.xlings }}")" >> "$GITHUB_ENV"
