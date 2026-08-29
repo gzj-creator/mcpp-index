@@ -3,7 +3,9 @@
 Date: 2026-08-30
 Upstream: <https://github.com/gzj-creator/galay>
 Tag: `v5.0.1` (`27d971b0a249189634740575540316fb963136f0`)
-Status: v5.0.1 local validation is being rerun after the v5.0.0 cross-toolchain CI failure.
+Status: v5.0.1 local validation passes; CI run 33269372157 passes on Linux
+GCC, macOS, Windows, lint, and mirror checks, but Linux LLVM still exposes an
+upstream `async_aio.h` module-compatibility error.
 
 ## 1. Shape and identity
 
@@ -77,10 +79,18 @@ changed to require the documented empty state. The corrected test then passed.
 
 - `mcpp xpkg parse pkgs/g/gzj-creator.galay.lua` passed with the Form-A result
   and Linux/macOS version lists.
-- `mcpp test -p galay` with the v5.0.1 descriptor is being rerun with mcpp
-  2026.8.27.1; the previous v5.0.0 cold run passed only with GCC.
-- The CI-pinned mcpp 2026.8.27.2 Linux default, Linux LLVM, macOS, and Windows
-  matrix is being rerun against v5.0.1.
+- `mcpp test -p galay` with the v5.0.1 descriptor passed on the local default
+  GCC toolchain: `test result ok. 1 passed; 0 failed`.
+- The CI-pinned mcpp 2026.8.27.2 Linux default test also passed:
+  `test result ok. 1 passed; 0 failed`.
+- CI run 33269372157 passed on Linux default, macOS default, Windows default,
+  lint, mirror reachability, graphics side-effect, and build checks.
+- CI's Linux LLVM leg still fails while compiling `galay.kernel`. Clang 22
+  rejects the v5.0.1 `async_aio.h` out-of-class template definition inside the
+  module's `export extern "C++"` block (`cannot export 'await_suspend' as it is
+  not at namespace scope`, followed by invalid member accesses). This is a
+  separate upstream source issue from the v5.0.0 intrinsic-header failure; the
+  v5.0.1 prelude guard itself is now effective.
 - The build compiled 26 Galay units, including both default module interfaces,
   the kernel implementation units, and the transitive libaio package.
 - All six descriptor lint checks passed, and all 134 package descriptors passed
