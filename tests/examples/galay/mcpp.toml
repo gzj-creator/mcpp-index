@@ -1,11 +1,11 @@
-# Public Galay Form-A package consumer. The package is Unix-only in v5.0.0;
+# Public Galay Form-A package consumer. The package is Unix-only in v5.0.1;
 # Windows still builds the no-op test below without resolving the dependency.
 [package]
 name = "galay-tests"
 version = "0.1.0"
 
 [target.'cfg(unix)'.dependencies.gzj-creator]
-galay = "5.0.0"
+galay = "5.0.1"
 
 [target.'cfg(unix)'.build]
 cxxflags = ["-DHAVE_GALAY=1"]

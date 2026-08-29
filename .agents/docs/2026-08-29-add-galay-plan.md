@@ -1,13 +1,13 @@
-# Add Galay 5.0.0 (`gzj-creator.galay`)
+# Add Galay 5.0.1 (`gzj-creator.galay`)
 
-Date: 2026-08-29
+Date: 2026-08-30
 Upstream: <https://github.com/gzj-creator/galay>
-Tag: `v5.0.0` (`a9e81ce8239695a8dae68314ee991339839d5409`)
-Status: local Linux validation passed with mcpp 2026.8.27.1 and the CI-pinned 2026.8.27.2 check.
+Tag: `v5.0.1` (`27d971b0a249189634740575540316fb963136f0`)
+Status: v5.0.1 local validation is being rerun after the v5.0.0 cross-toolchain CI failure.
 
 ## 1. Shape and identity
 
-Galay is source type (b), a library already developed for mcpp. Its v5.0.0
+Galay is source type (b), a library already developed for mcpp. Its v5.0.1
 release carries a complete `mcpp.toml`, so the index entry is Form A and does
 not duplicate its build recipe.
 
@@ -28,15 +28,21 @@ not duplicate its build recipe.
 
 Both platform entries use the immutable GitHub tag archive:
 
-    https://github.com/gzj-creator/galay/archive/refs/tags/v5.0.0.tar.gz
+    https://github.com/gzj-creator/galay/archive/refs/tags/v5.0.1.tar.gz
 
-The archive is 5,227,585 bytes. `sha256sum` was run twice on the complete
+The archive is 5,230,202 bytes. `sha256sum` was run twice on the complete
 archive and returned:
 
-    8e410d97b0615333c92192633f9495acdc8eb1d56dd94f1eeecd8e68e5a4f73e
+    be864cf9467188c231cd69baed496c73d7e4bd29234b9349b284238576f14b77
 
 `tar -tzf` succeeds and confirms the root `mcpp.toml`, the tracked include
 layout, and the fifteen named C++23 module interfaces are present.
+
+The v5.0.1 upstream patch changes the generated module preludes so `intrin.h`
+is only included for `_MSC_VER`, and `emmintrin.h` is only included on x86.
+This directly addresses the v5.0.0 CI failures on Linux LLVM and macOS, where
+Clang's resource `intrin.h` attempted `#include_next <intrin.h>` without an
+MSVC header behind it.
 
 ## 3. CN mirror
 
@@ -71,10 +77,10 @@ changed to require the documented empty state. The corrected test then passed.
 
 - `mcpp xpkg parse pkgs/g/gzj-creator.galay.lua` passed with the Form-A result
   and Linux/macOS version lists.
-- `mcpp test -p galay` passed with mcpp 2026.8.27.1 after a cold build:
-  `test result ok. 1 passed; 0 failed`.
-- The CI-pinned `mcpp 2026.8.27.2` test also passed offline:
-  `test result ok. 1 passed; 0 failed`.
+- `mcpp test -p galay` with the v5.0.1 descriptor is being rerun with mcpp
+  2026.8.27.1; the previous v5.0.0 cold run passed only with GCC.
+- The CI-pinned mcpp 2026.8.27.2 Linux default, Linux LLVM, macOS, and Windows
+  matrix is being rerun against v5.0.1.
 - The build compiled 26 Galay units, including both default module interfaces,
   the kernel implementation units, and the transitive libaio package.
 - All six descriptor lint checks passed, and all 134 package descriptors passed
@@ -87,5 +93,6 @@ changed to require the documented empty state. The corrected test then passed.
 
 When upstream publishes Windows support or a maintainer creates the
 `mcpp-res/galay` release asset, add the platform/mirror entry with the same
-archive bytes and keep the version at `5.0.0` only if the bytes remain
-identical; otherwise publish a new upstream version/tag.
+archive bytes. The v5.0.1 release remains Linux/macOS in its own manifest, so
+the Windows example continues to compile a no-op test until a Windows package
+entry exists.
