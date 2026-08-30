@@ -9,10 +9,13 @@
 
 ### Added
 
-- 收录 `gzj-creator.galay` 5.0.1 原生 Form-A 模块包，覆盖 `galay.utils` 与
+- 收录 `gzj-creator.galay` 5.0.2 原生 Form-A 模块包，覆盖 `galay.utils` 与
   `galay.kernel` 默认模块，并加入 Unix 示例工程和索引文档。
 
 ### Fixed
 
 - 跟进 Galay 5.0.1 对 C++23 module prelude 的跨平台 intrinsic 头文件守卫修复，
   避免 Clang 在 Linux/macOS 上错误转发 `intrin.h`。
+- 跟进 Galay 5.0.2 将 `AioCommitAwaitable::await_suspend` 的类外模板定义放回
+  `galay::async` 命名空间，修复 Clang 22 导出 `galay.kernel` 时的模块语义错误，
+  同时保留 Linux `USE_EPOLL` AIO 后端行为。

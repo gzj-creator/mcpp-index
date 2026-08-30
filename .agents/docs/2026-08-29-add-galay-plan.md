@@ -1,15 +1,16 @@
-# Add Galay 5.0.1 (`gzj-creator.galay`)
+# Add Galay 5.0.2 (`gzj-creator.galay`)
 
 Date: 2026-08-30
 Upstream: <https://github.com/gzj-creator/galay>
-Tag: `v5.0.1` (`27d971b0a249189634740575540316fb963136f0`)
-Status: v5.0.1 local validation passes; CI run 33269372157 passes on Linux
-GCC, macOS, Windows, lint, and mirror checks, but Linux LLVM still exposes an
-upstream `async_aio.h` module-compatibility error.
+Tag: `v5.0.2` (`d58976711790e47d5b0ad272e068d516192a1a1e`)
+Status: upstream has published the Clang 22 module fix as v5.0.2. The index
+follows that immutable archive; local GCC/LLVM module and consumer checks,
+archive reproducibility, and the mcpp 2026.8.27.2 package tests pass. The
+updated PR still needs its post-sync GitHub Actions run.
 
 ## 1. Shape and identity
 
-Galay is source type (b), a library already developed for mcpp. Its v5.0.1
+Galay is source type (b), a library already developed for mcpp. Its v5.0.2
 release carries a complete `mcpp.toml`, so the index entry is Form A and does
 not duplicate its build recipe.
 
@@ -30,21 +31,31 @@ not duplicate its build recipe.
 
 Both platform entries use the immutable GitHub tag archive:
 
-    https://github.com/gzj-creator/galay/archive/refs/tags/v5.0.1.tar.gz
+    https://github.com/gzj-creator/galay/archive/refs/tags/v5.0.2.tar.gz
 
-The archive is 5,230,202 bytes. `sha256sum` was run twice on the complete
+The archive is 5,231,630 bytes. `sha256sum` was run twice on the complete
 archive and returned:
 
-    be864cf9467188c231cd69baed496c73d7e4bd29234b9349b284238576f14b77
+    93a93fabcfeb1b0ae160f3082ed472571532ce208c112bf2697f94267b27332a
 
 `tar -tzf` succeeds and confirms the root `mcpp.toml`, the tracked include
 layout, and the fifteen named C++23 module interfaces are present.
 
-The v5.0.1 upstream patch changes the generated module preludes so `intrin.h`
-is only included for `_MSC_VER`, and `emmintrin.h` is only included on x86.
-This directly addresses the v5.0.0 CI failures on Linux LLVM and macOS, where
-Clang's resource `intrin.h` attempted `#include_next <intrin.h>` without an
-MSVC header behind it.
+The v5.0.1 upstream patch remains intact: the generated module preludes only
+include `intrin.h` for `_MSC_VER` and `emmintrin.h` on x86. This addresses the
+earlier v5.0.0 Linux LLVM/macOS intrinsic-header failure without changing the
+new release's guards.
+
+The v5.0.2 fix addresses the separate Linux LLVM failure found in CI run
+33269750913, job 99146034674, with mcpp 2026.8.27.2 and LLVM 22.1.8. In
+v5.0.1, `async_aio.h` closed `namespace galay::async` and then defined the
+`AioCommitAwaitable::await_suspend` function template with a globally
+qualified-id. Because `galay_kernel.cppm` includes that header inside
+`export extern "C++"`, Clang 22 rejected the definition as not being at
+namespace scope and produced cascading `this`, `handle`, `m_waker`,
+`m_controller`, and `m_result` errors. v5.0.2 puts the definition back inside
+the `namespace galay::async` block. The declaration, template visibility,
+ABI, and Linux `USE_EPOLL` implementation remain unchanged.
 
 ## 3. CN mirror
 
@@ -79,18 +90,22 @@ changed to require the documented empty state. The corrected test then passed.
 
 - `mcpp xpkg parse pkgs/g/gzj-creator.galay.lua` passed with the Form-A result
   and Linux/macOS version lists.
-- `mcpp test -p galay` with the v5.0.1 descriptor passed on the local default
+- `mcpp test -p galay` with the v5.0.2 descriptor passed on the local default
   GCC toolchain: `test result ok. 1 passed; 0 failed`.
-- The CI-pinned mcpp 2026.8.27.2 Linux default test also passed:
-  `test result ok. 1 passed; 0 failed`.
+- The CI-pinned mcpp 2026.8.27.2 Linux default and LLVM 22.1.8 tests pass:
+  `test result ok. 1 passed; 0 failed` for each toolchain.
 - CI run 33269372157 passed on Linux default, macOS default, Windows default,
   lint, mirror reachability, graphics side-effect, and build checks.
-- CI's Linux LLVM leg still fails while compiling `galay.kernel`. Clang 22
-  rejects the v5.0.1 `async_aio.h` out-of-class template definition inside the
-  module's `export extern "C++"` block (`cannot export 'await_suspend' as it is
-  not at namespace scope`, followed by invalid member accesses). This is a
-  separate upstream source issue from the v5.0.0 intrinsic-header failure; the
-  v5.0.1 prelude guard itself is now effective.
+- The upstream Clang 22 regression test (`kernel.alignsrc`) and the complete
+  CMake/Ninja Linux module surface pass with both GCC and LLVM 22.1.8,
+  including `USE_EPOLL` and `galay.kernel`.
+- A module consumer importing both `galay.utils` and `galay.kernel` compiles,
+  instantiates `co_await AsyncAio::commit()`, and runs successfully under LLVM
+  22.1.8; this confirms the template definition remains visible and member
+  accesses bind to the awaitable instance.
+- The previous CI failure was reproduced from run 33269750913/job 99146034674
+  before the upstream patch and is resolved by v5.0.2; the v5.0.1 intrinsic
+  guards remain covered by the prelude regression test.
 - The build compiled 26 Galay units, including both default module interfaces,
   the kernel implementation units, and the transitive libaio package.
 - All six descriptor lint checks passed, and all 134 package descriptors passed
@@ -103,6 +118,6 @@ changed to require the documented empty state. The corrected test then passed.
 
 When upstream publishes Windows support or a maintainer creates the
 `mcpp-res/galay` release asset, add the platform/mirror entry with the same
-archive bytes. The v5.0.1 release remains Linux/macOS in its own manifest, so
+archive bytes. The v5.0.2 release remains Linux/macOS in its own manifest, so
 the Windows example continues to compile a no-op test until a Windows package
 entry exists.
