@@ -19,3 +19,7 @@
 - 跟进 Galay 5.0.2 将 `AioCommitAwaitable::await_suspend` 的类外模板定义放回
   `galay::async` 命名空间，修复 Clang 22 导出 `galay.kernel` 时的模块语义错误，
   同时保留 Linux `USE_EPOLL` AIO 后端行为。
+
+### Docs
+
+- 记录 Galay 5.0.2 归档的双下载 SHA256 校验，以及 PR #285 的全平台 CI 验证结果。

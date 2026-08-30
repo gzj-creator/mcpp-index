@@ -6,7 +6,8 @@ Tag: `v5.0.2` (`d58976711790e47d5b0ad272e068d516192a1a1e`)
 Status: upstream has published the Clang 22 module fix as v5.0.2. The index
 follows that immutable archive; local GCC/LLVM module and consumer checks,
 archive reproducibility, and the mcpp 2026.8.27.2 package tests pass. The
-updated PR still needs its post-sync GitHub Actions run.
+post-sync PR validation is green in validate run 33291129061 and site-check
+run 33291129055.
 
 ## 1. Shape and identity
 
@@ -106,6 +107,10 @@ changed to require the documented empty state. The corrected test then passed.
 - The previous CI failure was reproduced from run 33269750913/job 99146034674
   before the upstream patch and is resolved by v5.0.2; the v5.0.1 intrinsic
   guards remain covered by the prelude regression test.
+- PR #285 post-sync validate run 33291129061 passed Linux default GCC, Linux
+  LLVM 22.1.8, macOS default, Windows default, lint, mirror-cn-reachable,
+  graphics side-effect, member selection, and timing jobs. Site-check run
+  33291129055 also passed.
 - The build compiled 26 Galay units, including both default module interfaces,
   the kernel implementation units, and the transitive libaio package.
 - All six descriptor lint checks passed, and all 134 package descriptors passed
